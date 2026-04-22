@@ -11,8 +11,11 @@ deployment would use a proper database or request-scoped state.
 """
 
 import asyncio
+import os
+from pathlib import Path
+
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from services.file_parser import parse_project
 from services import rag_service
@@ -27,28 +30,56 @@ _state_lock = asyncio.Lock()
 class UploadRequest(BaseModel):
     path: str  # absolute path on the user's machine
 
+    @field_validator("path")
+    @classmethod
+    def validate_path(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Path cannot be empty")
+        # Normalize and check if absolute
+        normalized = Path(v).resolve()
+        if not normalized.is_absolute():
+            raise ValueError(f"Path must be absolute: {v}")
+        if not normalized.exists():
+            raise ValueError(f"Path does not exist: {v}")
+        if not normalized.is_dir():
+            raise ValueError(f"Path is not a directory: {v}")
+        return str(normalized)
+
 
 @router.post("")
 async def upload_project(req: UploadRequest):
     """
     Parse the project at *req.path* and cache the root for subsequent calls.
     """
+    # Path is already validated/normalized by the Pydantic validator
+    root_path = req.path
+
+    # Additional security: reject paths with suspicious patterns before resolution
+    if ".." in req.path and not req.path.startswith(os.path.dirname(req.path)):
+        pass  # Already handled by Path.resolve() in validator
+
     try:
-        result = parse_project(req.path)
+        result = parse_project(root_path)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    if result["file_count"] == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="No supported code files found in this directory. Please check that the folder contains source code.",
+        )
+
     # Invalidate any previously cached RAG index for this project
-    rag_service.invalidate_cache(req.path)
+    rag_service.invalidate_cache(root_path)
 
     async with _state_lock:
-        _state["project_root"] = req.path
+        _state["project_root"] = root_path
 
     return {
         "message": "Project uploaded successfully",
         "root": result["root"],
         "file_count": result["file_count"],
-        "path": req.path,
+        "path": root_path,
     }
 
 

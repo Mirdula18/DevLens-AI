@@ -12,12 +12,16 @@ Flow:
 """
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from routes.upload import get_project_root
 from services import rag_service, llm_service
 
 router = APIRouter()
+
+# Bounds for top_k to prevent excessive retrieval or empty results
+MIN_TOP_K = 1
+MAX_TOP_K = 20
 
 
 class ChatRequest(BaseModel):
@@ -25,14 +29,29 @@ class ChatRequest(BaseModel):
     top_k: int = 5
     model: str = llm_service.DEFAULT_MODEL
 
+    @field_validator("question")
+    @classmethod
+    def validate_question(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Question must not be empty")
+        return v
+
+    @field_validator("top_k")
+    @classmethod
+    def validate_top_k(cls, v: int) -> int:
+        if v < MIN_TOP_K:
+            raise ValueError(f"top_k must be at least {MIN_TOP_K}")
+        if v > MAX_TOP_K:
+            raise ValueError(f"top_k must be at most {MAX_TOP_K}")
+        return v
+
 
 @router.post("")
 async def chat(req: ChatRequest):
     """
     Answer *req.question* using RAG over the loaded project.
     """
-    if not req.question.strip():
-        raise HTTPException(status_code=400, detail="Question must not be empty.")
+    # Validation already done by Pydantic validators
 
     root = await get_project_root()
 

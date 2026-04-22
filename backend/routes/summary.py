@@ -45,9 +45,16 @@ async def generate_summary(req: SummaryRequest):
             break
         rel = Path(fp).relative_to(root).as_posix()
         content = safe_read(fp, max_bytes=2000)  # short excerpt per file
-        entry = f"### {rel}\n{content}"
-        snapshot_parts.append(entry)
-        total_chars += len(entry)
+        if content.strip():  # Only include non-empty files
+            entry = f"### {rel}\n{content}"
+            snapshot_parts.append(entry)
+            total_chars += len(entry)
+
+    if not snapshot_parts:
+        raise HTTPException(
+            status_code=400,
+            detail="No readable code files found. All files may be empty or unreadable.",
+        )
 
     snapshot = "\n\n".join(snapshot_parts)
 

@@ -6,7 +6,7 @@ Also exposes a /explain/confusion endpoint for the Confusion Detector feature.
 """
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from services import llm_service
 
@@ -14,16 +14,44 @@ router = APIRouter()
 
 VALID_MODES = {"normal", "eli5", "review", "optimize"}
 
+# Maximum characters to send to LLM (prevents timeout/memory issues)
+MAX_CODE_LENGTH = 50_000
+
 
 class ExplainRequest(BaseModel):
     code: str
     mode: str = "normal"
     model: str = llm_service.DEFAULT_MODEL
 
+    @field_validator("code")
+    @classmethod
+    def validate_code(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Code must not be empty")
+        if len(v) > MAX_CODE_LENGTH:
+            raise ValueError(f"Code exceeds maximum length of {MAX_CODE_LENGTH} characters")
+        return v
+
+    @field_validator("mode")
+    @classmethod
+    def validate_mode(cls, v: str) -> str:
+        if v not in VALID_MODES:
+            raise ValueError(f"Invalid mode '{v}'. Choose from: {sorted(VALID_MODES)}")
+        return v
+
 
 class ConfusionRequest(BaseModel):
     code: str
     model: str = llm_service.DEFAULT_MODEL
+
+    @field_validator("code")
+    @classmethod
+    def validate_code(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Code must not be empty")
+        if len(v) > MAX_CODE_LENGTH:
+            raise ValueError(f"Code exceeds maximum length of {MAX_CODE_LENGTH} characters")
+        return v
 
 
 @router.post("")
@@ -37,13 +65,7 @@ async def explain_code(req: ExplainRequest):
         review   – code review (bugs / bad practices)
         optimize – performance & optimisation suggestions
     """
-    if req.mode not in VALID_MODES:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid mode '{req.mode}'. Choose from: {sorted(VALID_MODES)}",
-        )
-    if not req.code.strip():
-        raise HTTPException(status_code=400, detail="Code must not be empty.")
+    # Validation already done by Pydantic validators
 
     try:
         explanation = await llm_service.explain_code(req.code, req.mode, req.model)
@@ -61,8 +83,7 @@ async def detect_confusion(req: ConfusionRequest):
     """
     Identify the most confusing / complex sections of the provided code.
     """
-    if not req.code.strip():
-        raise HTTPException(status_code=400, detail="Code must not be empty.")
+    # Validation already done by Pydantic validators
 
     try:
         result = await llm_service.detect_confusion(req.code, req.model)

@@ -23,13 +23,21 @@ def _resolve_safe_path(root: str, relative: str) -> Path:
     Raises HTTPException 403 if the resolved path escapes the root.
     """
     root_resolved = Path(root).resolve()
+
+    # Strip leading slashes/dots to normalize relative paths
+    relative_clean = relative.lstrip("/\\")
+    if relative_clean.startswith(".."):
+        raise HTTPException(status_code=403, detail="Access denied: path traversal detected.")
+
     # Normalise and resolve without following symlinks out of root
-    full_path = (root_resolved / Path(relative)).resolve()
+    full_path = (root_resolved / Path(relative_clean)).resolve()
+
     # Ensure the resolved path is inside the project root
     try:
         full_path.relative_to(root_resolved)
     except ValueError:
         raise HTTPException(status_code=403, detail="Access denied: path traversal detected.")
+
     return full_path
 
 
@@ -38,6 +46,9 @@ async def get_file(path: str = Query(..., description="Relative path within the 
     """
     Return the raw text content of the file at *path* (relative to project root).
     """
+    if not path or not path.strip():
+        raise HTTPException(status_code=400, detail="Path parameter is required.")
+
     root = await get_project_root()
     full_path = _resolve_safe_path(root, path)
 

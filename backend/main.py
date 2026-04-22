@@ -4,8 +4,10 @@ DevLens AI – FastAPI entry point.
 Starts the server and registers all route modules.
 """
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from routes import upload, tree, file, explain, summary, chat
 
@@ -31,6 +33,22 @@ app.include_router(file.router, prefix="/file", tags=["file"])
 app.include_router(explain.router, prefix="/explain", tags=["explain"])
 app.include_router(summary.router, prefix="/summary", tags=["summary"])
 app.include_router(chat.router, prefix="/chat", tags=["chat"])
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Standardized validation error response."""
+    errors = []
+    for error in exc.errors():
+        errors.append({
+            "field": ".".join(str(x) for x in error["loc"]),
+            "message": error["msg"],
+            "type": error["type"],
+        })
+    return JSONResponse(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        content={"error": "validation_error", "details": errors},
+    )
 
 
 @app.get("/health")

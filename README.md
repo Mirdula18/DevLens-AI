@@ -1,4 +1,4 @@
-# DevLens AI 🔍
+# DevLens AI 
 
 **DevLens AI** is an offline, AI-powered codebase explainer — a mini GitHub Copilot that runs entirely on your machine. Load any local project folder and get instant AI explanations, code reviews, optimization suggestions, and a codebase Q&A chatbot, all powered by a local LLM (Ollama).
 

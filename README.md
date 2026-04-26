@@ -143,8 +143,3 @@ Open **http://localhost:5173** in your browser.
 
 ---
 
-## Notes
-
-- Everything runs **100% offline** after initial setup.
-- The RAG index is built automatically the first time you use the Chat feature.
-- Only files ≤ 100 KB are read; `node_modules`, `.git`, and build dirs are skipped.

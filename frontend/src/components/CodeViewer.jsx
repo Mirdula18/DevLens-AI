@@ -8,6 +8,7 @@
  */
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
+import Icon from './icons'
 
 // Map common extensions to Prism language identifiers
 const EXT_LANG = {
@@ -27,8 +28,9 @@ function getLang(fileName) {
 export default function CodeViewer({ fileName, content }) {
   if (!content) {
     return (
-      <div className="flex h-full items-center justify-center text-gray-600">
-        <span>Select a file from the sidebar to view its content.</span>
+      <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-gray-600">
+        <Icon.File className="h-8 w-8 text-gray-700" />
+        <p className="text-sm">Select a file to view its content.</p>
       </div>
     )
   }
@@ -37,7 +39,9 @@ export default function CodeViewer({ fileName, content }) {
     <div className="flex h-full flex-col overflow-hidden">
       {/* Filename bar */}
       <div className="flex items-center gap-2 border-b border-surface-600 bg-surface-800 px-4 py-2 text-sm">
-        <span className="text-gray-400">📄</span>
+        <span className="flex h-4 w-4 items-center justify-center text-gray-500">
+          <Icon.File className="h-3.5 w-3.5" />
+        </span>
         <span className="font-mono text-gray-200">{fileName}</span>
       </div>
 

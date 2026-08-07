@@ -9,7 +9,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from routes import upload, tree, file, explain, summary, chat
+from routes import upload, tree, file, explain, summary, chat, models
 
 app = FastAPI(
     title="DevLens AI",
@@ -33,6 +33,7 @@ app.include_router(file.router, prefix="/file", tags=["file"])
 app.include_router(explain.router, prefix="/explain", tags=["explain"])
 app.include_router(summary.router, prefix="/summary", tags=["summary"])
 app.include_router(chat.router, prefix="/chat", tags=["chat"])
+app.include_router(models.router, prefix="/models", tags=["models"])
 
 
 @app.exception_handler(RequestValidationError)

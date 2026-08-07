@@ -8,6 +8,7 @@
  *   depth        – indent depth (internal recursion, starts at 0)
  */
 import { useState } from 'react'
+import Icon from './icons'
 
 // File-extension → colour mapping for icons
 const EXT_COLOURS = {
@@ -32,15 +33,6 @@ function fileColour(name) {
   return EXT_COLOURS[ext] ?? EXT_COLOURS.default
 }
 
-function FileIcon({ name }) {
-  const cls = fileColour(name)
-  return <span className={`mr-1 text-xs ${cls}`}>◈</span>
-}
-
-function FolderIcon({ open }) {
-  return <span className="mr-1 text-yellow-500">{open ? '▾' : '▸'}</span>
-}
-
 function TreeNode({ node, onFileClick, selectedPath, depth }) {
   const [open, setOpen] = useState(depth === 0)
   const indent = depth * 12
@@ -49,11 +41,16 @@ function TreeNode({ node, onFileClick, selectedPath, depth }) {
     return (
       <div>
         <button
-          className="flex w-full items-center rounded px-2 py-0.5 text-left text-sm text-gray-300 hover:bg-surface-700 hover:text-white"
+          className="flex w-full items-center gap-1 rounded-md px-2 py-1 text-left text-sm text-gray-300 transition-colors hover:bg-surface-700 hover:text-white"
           style={{ paddingLeft: `${indent + 8}px` }}
           onClick={() => setOpen(o => !o)}
         >
-          <FolderIcon open={open} />
+          <Icon.Chevron
+            className={`h-3 w-3 flex-shrink-0 text-gray-500 transition-transform duration-150 ${
+              open ? 'rotate-90' : ''
+            }`}
+          />
+          <Icon.Folder className={`h-4 w-4 flex-shrink-0 ${open ? 'text-yellow-500' : 'text-yellow-600'}`} />
           <span className="truncate">{node.name}</span>
         </button>
         {open && node.children?.map(child => (
@@ -73,14 +70,14 @@ function TreeNode({ node, onFileClick, selectedPath, depth }) {
   const isSelected = node.path === selectedPath
   return (
     <button
-      className={`flex w-full items-center rounded px-2 py-0.5 text-left text-sm hover:bg-surface-700 hover:text-white ${
-        isSelected ? 'bg-surface-600 text-white' : 'text-gray-400'
+      className={`flex w-full items-center gap-1 rounded-md px-2 py-1 text-left text-sm transition-colors hover:bg-surface-700 ${
+        isSelected ? 'bg-surface-600 text-white' : 'text-gray-400 hover:text-white'
       }`}
-      style={{ paddingLeft: `${indent + 8}px` }}
+      style={{ paddingLeft: `${indent + 8 + 4}px` }}
       onClick={() => onFileClick(node.path)}
       title={node.path}
     >
-      <FileIcon name={node.name} />
+      <Icon.File className={`h-4 w-4 flex-shrink-0 ${fileColour(node.name)}`} />
       <span className="truncate">{node.name}</span>
     </button>
   )
@@ -88,11 +85,16 @@ function TreeNode({ node, onFileClick, selectedPath, depth }) {
 
 export default function FileTree({ nodes, onFileClick, selectedPath }) {
   if (!nodes || nodes.length === 0) {
-    return <p className="px-3 py-2 text-xs text-gray-500">No files found.</p>
+    return (
+      <div className="flex flex-col items-center justify-center gap-2 px-4 py-10 text-gray-500">
+        <Icon.File className="h-6 w-6 text-gray-600" />
+        <p className="text-xs">No files found.</p>
+      </div>
+    )
   }
 
   return (
-    <div className="select-none">
+    <div className="select-none px-1 py-1">
       {nodes.map(node => (
         <TreeNode
           key={node.path}

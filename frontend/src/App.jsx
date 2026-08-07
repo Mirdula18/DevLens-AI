@@ -9,12 +9,13 @@
  *
  * A bottom "Chat" tab toggles the ChatPanel.
  */
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Sidebar from './components/Sidebar'
 import CodeViewer from './components/CodeViewer'
 import ExplanationPanel from './components/ExplanationPanel'
 import ChatPanel from './components/ChatPanel'
 import ModeSelector from './components/ModeSelector'
+import ModelSelector from './components/ModelSelector'
 
 import {
   uploadProject,
@@ -23,6 +24,7 @@ import {
   explainCode,
   detectConfusion,
   generateSummary,
+  fetchModels,
 } from './services/api'
 
 export default function App() {
@@ -37,8 +39,10 @@ export default function App() {
   const [fileName, setFileName] = useState('')
   const [fileLoading, setFileLoading] = useState(false)
 
-  // Explanation state
+  // Explanation / model state
   const [mode, setMode] = useState('normal')
+  const [availableModels, setAvailableModels] = useState(['mistral'])
+  const [model, setModel] = useState('mistral')
   const [explanation, setExplanation] = useState('')
   const [confusionAnalysis, setConfusionAnalysis] = useState('')
   const [summary, setSummary] = useState('')
@@ -49,6 +53,26 @@ export default function App() {
   const [activePanel, setActivePanel] = useState('explain')
 
   // ── Handlers ────────────────────────────────────────────────────────────────
+
+  // Load the available models from Ollama on startup
+  useEffect(() => {
+    let active = true
+    ;(async () => {
+      try {
+        const data = await fetchModels()
+        if (!active) return
+        if (data.models?.length) {
+          setAvailableModels(data.models)
+          setModel(data.models[0])
+        }
+      } catch {
+        // Ollama unavailable – keep the fallback default
+      }
+    })()
+    return () => {
+      active = false
+    }
+  }, [])
 
   async function handleUpload(path) {
     setUploadStatus({ loading: true, error: null, projectName: '' })
@@ -103,7 +127,7 @@ export default function App() {
     setActivePanel('explain')
 
     try {
-      const data = await explainCode(fileContent, mode)
+      const data = await explainCode(fileContent, mode, model)
       setExplanation(data.explanation)
     } catch (err) {
       setAiError(err.response?.data?.detail ?? err.message)
@@ -122,7 +146,7 @@ export default function App() {
     setActivePanel('explain')
 
     try {
-      const data = await detectConfusion(fileContent)
+      const data = await detectConfusion(fileContent, model)
       setConfusionAnalysis(data.confusion_analysis)
     } catch (err) {
       setAiError(err.response?.data?.detail ?? err.message)
@@ -140,7 +164,7 @@ export default function App() {
     setActivePanel('explain')
 
     try {
-      const data = await generateSummary()
+      const data = await generateSummary(model)
       setSummary(data.summary)
     } catch (err) {
       setAiError(err.response?.data?.detail ?? err.message)
@@ -164,20 +188,27 @@ export default function App() {
           </span>
         </div>
         {/* Panel toggle */}
-        <div className="flex gap-1">
-          {['explain', 'chat'].map(panel => (
-            <button
-              key={panel}
-              onClick={() => setActivePanel(panel)}
-              className={`rounded px-3 py-1 text-xs font-medium ${
-                activePanel === panel
-                  ? 'bg-accent text-white'
-                  : 'text-gray-400 hover:bg-surface-700 hover:text-white'
-              }`}
-            >
-              {panel === 'explain' ? '✨ Explain' : '💬 Chat'}
-            </button>
-          ))}
+        <div className="flex items-center gap-3">
+          <ModelSelector
+            models={availableModels}
+            value={model}
+            onChange={setModel}
+          />
+          <div className="flex gap-1">
+            {['explain', 'chat'].map(panel => (
+              <button
+                key={panel}
+                onClick={() => setActivePanel(panel)}
+                className={`rounded px-3 py-1 text-xs font-medium ${
+                  activePanel === panel
+                    ? 'bg-accent text-white'
+                    : 'text-gray-400 hover:bg-surface-700 hover:text-white'
+                }`}
+              >
+                {panel === 'explain' ? '✨ Explain' : '💬 Chat'}
+              </button>
+            ))}
+          </div>
         </div>
       </header>
 
@@ -223,7 +254,7 @@ export default function App() {
               />
             </>
           ) : (
-            <ChatPanel hasProject={hasProject} />
+            <ChatPanel hasProject={hasProject} model={model} />
           )}
         </aside>
       </div>

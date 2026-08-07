@@ -23,6 +23,16 @@ router = APIRouter()
 MIN_TOP_K = 1
 MAX_TOP_K = 20
 
+# Maximum total characters of context sent to the LLM (prevents prompt overflow)
+MAX_CONTEXT_CHARS = 30_000
+
+
+def _cap_context(context: str, max_chars: int = MAX_CONTEXT_CHARS) -> str:
+    """Truncate the RAG context to stay within the LLM's prompt budget."""
+    if len(context) <= max_chars:
+        return context
+    return context[:max_chars].rstrip() + "\n\n[context truncated]"
+
 
 class ChatRequest(BaseModel):
     question: str
@@ -67,7 +77,7 @@ async def chat(req: ChatRequest):
             "sources": [],
         }
 
-    context = rag_service.build_context(chunks)
+    context = _cap_context(rag_service.build_context(chunks))
 
     try:
         answer = await llm_service.answer_with_rag(req.question, context, req.model)

@@ -10,6 +10,12 @@ import axios from 'axios'
 // During dev Vite proxies /upload, /tree, etc. to localhost:8000
 const api = axios.create({ baseURL: '/' })
 
+/** Fetch the list of models available in Ollama. */
+export async function fetchModels() {
+  const { data } = await api.get('/models')
+  return data
+}
+
 /** Upload (register) a project folder by its absolute path. */
 export async function uploadProject(path) {
   const { data } = await api.post('/upload', { path })

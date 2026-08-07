@@ -5,10 +5,17 @@ All prompts are sent to http://localhost:11434/api/generate and the
 response is streamed back and then returned as a single string.
 """
 
+import os
+
 import httpx
 
-OLLAMA_URL = "http://localhost:11434/api/generate"
-DEFAULT_MODEL = "mistral"
+# Base URL can be overridden with the OLLAMA_URL env var (e.g. remote host)
+OLLAMA_BASE_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434").rstrip("/")
+OLLAMA_URL = f"{OLLAMA_BASE_URL}/api/generate"
+OLLAMA_TAGS_URL = f"{OLLAMA_BASE_URL}/api/tags"
+
+# Default model can be overridden with the OLLAMA_MODEL env var
+DEFAULT_MODEL = os.environ.get("OLLAMA_MODEL", "mistral")
 
 # ── Prompt templates ────────────────────────────────────────────────────────
 
@@ -140,6 +147,24 @@ async def generate(prompt: str, model: str = DEFAULT_MODEL) -> str:
 
 
 # ── Public helpers ────────────────────────────────────────────────────────────
+
+async def list_models() -> list[str]:
+    """
+    Return the names of models available in Ollama.
+
+    Falls back to the default model on network / server errors so the UI
+    still has something to show if Ollama is unavailable.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(OLLAMA_TAGS_URL)
+            response.raise_for_status()
+            data = response.json()
+        models = [m.get("name") for m in data.get("models", [])]
+        return [m for m in models if m]
+    except Exception:  # noqa: BLE001
+        return [DEFAULT_MODEL]
+
 
 async def explain_code(code: str, mode: str = "normal", model: str = DEFAULT_MODEL) -> str:
     """Return an AI explanation of *code* using the selected *mode*."""

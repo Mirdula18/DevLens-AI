@@ -37,7 +37,7 @@ function Message({ msg }) {
   )
 }
 
-export default function ChatPanel({ hasProject }) {
+export default function ChatPanel({ hasProject, model }) {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -58,7 +58,7 @@ export default function ChatPanel({ hasProject }) {
     setLoading(true)
 
     try {
-      const data = await sendChatMessage(question)
+      const data = await sendChatMessage(question, 5, model)
       setMessages(prev => [
         ...prev,
         { role: 'assistant', content: data.answer, sources: data.sources },

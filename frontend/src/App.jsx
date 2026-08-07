@@ -16,6 +16,7 @@ import ExplanationPanel from './components/ExplanationPanel'
 import ChatPanel from './components/ChatPanel'
 import ModeSelector from './components/ModeSelector'
 import ModelSelector from './components/ModelSelector'
+import Icon from './components/icons'
 
 import {
   uploadProject,
@@ -180,12 +181,14 @@ export default function App() {
     <div className="flex h-screen flex-col overflow-hidden bg-surface-900 text-gray-100">
       {/* ── Top bar ── */}
       <header className="flex items-center justify-between border-b border-surface-600 bg-surface-800 px-4 py-2">
-        <div className="flex items-center gap-2">
-          <span className="text-xl">🔍</span>
-          <h1 className="text-base font-semibold text-accent">DevLens AI</h1>
-          <span className="rounded bg-surface-700 px-2 py-0.5 text-xs text-gray-400">
-            Offline AI Code Explainer
-          </span>
+        <div className="flex items-center gap-3">
+          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-accent/15 text-accent">
+            <Icon.Logo className="h-4 w-4" />
+          </div>
+          <div>
+            <h1 className="text-sm font-semibold leading-tight text-gray-100">DevLens AI</h1>
+            <span className="text-[11px] leading-tight text-gray-500">Offline AI Code Explainer</span>
+          </div>
         </div>
         {/* Panel toggle */}
         <div className="flex items-center gap-3">
@@ -195,17 +198,21 @@ export default function App() {
             onChange={setModel}
           />
           <div className="flex gap-1">
-            {['explain', 'chat'].map(panel => (
+            {[
+              { id: 'explain', label: 'Explain', Icon: Icon.Sparkles },
+              { id: 'chat', label: 'Chat', Icon: Icon.Message },
+            ].map(({ id, label, Icon: PanelIcon }) => (
               <button
-                key={panel}
-                onClick={() => setActivePanel(panel)}
-                className={`rounded px-3 py-1 text-xs font-medium ${
-                  activePanel === panel
+                key={id}
+                onClick={() => setActivePanel(id)}
+                className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                  activePanel === id
                     ? 'bg-accent text-white'
                     : 'text-gray-400 hover:bg-surface-700 hover:text-white'
                 }`}
               >
-                {panel === 'explain' ? '✨ Explain' : '💬 Chat'}
+                <PanelIcon className="h-3.5 w-3.5" />
+                <span>{label}</span>
               </button>
             ))}
           </div>

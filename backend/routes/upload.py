@@ -11,7 +11,6 @@ deployment would use a proper database or request-scoped state.
 """
 
 import asyncio
-import os
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
@@ -53,10 +52,6 @@ async def upload_project(req: UploadRequest):
     """
     # Path is already validated/normalized by the Pydantic validator
     root_path = req.path
-
-    # Additional security: reject paths with suspicious patterns before resolution
-    if ".." in req.path and not req.path.startswith(os.path.dirname(req.path)):
-        pass  # Already handled by Path.resolve() in validator
 
     try:
         result = parse_project(root_path)

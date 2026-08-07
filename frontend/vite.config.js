@@ -13,6 +13,7 @@ export default defineConfig({
       '/explain': 'http://localhost:8000',
       '/summary': 'http://localhost:8000',
       '/chat': 'http://localhost:8000',
+      '/models': 'http://localhost:8000',
       '/health': 'http://localhost:8000',
     },
   },

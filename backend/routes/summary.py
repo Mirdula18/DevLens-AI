@@ -13,8 +13,8 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from routes.upload import get_project_root
-from services.file_parser import get_flat_files_async
 from services import llm_service
+from services.file_parser import get_flat_files_async
 from utils.file_utils import safe_read_async
 
 router = APIRouter()
@@ -48,7 +48,7 @@ async def _build_snapshot(root: str) -> str:
 
     snapshot_parts: list[str] = []
     total_chars = 0
-    for fp, content in zip(file_paths, contents):
+    for fp, content in zip(file_paths, contents, strict=False):
         if content.strip():
             rel = Path(fp).relative_to(root).as_posix()
             entry = f"### {rel}\n{content}"

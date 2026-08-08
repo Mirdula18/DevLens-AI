@@ -17,7 +17,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, field_validator
 
 from routes.upload import get_project_root
-from services import rag_service, llm_service
+from services import llm_service, rag_service
 
 router = APIRouter()
 

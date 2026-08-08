@@ -14,16 +14,14 @@ that repeated queries don't re-index the same project.
 from __future__ import annotations
 
 import asyncio
-import re
 import threading
 from pathlib import Path
 from typing import NamedTuple
 
 import faiss
-import numpy as np
 
-from utils.file_utils import safe_read
 from services.file_parser import get_flat_files
+from utils.file_utils import safe_read
 
 # Lazy import so the heavy model is loaded only when RAG is first used
 _model = None

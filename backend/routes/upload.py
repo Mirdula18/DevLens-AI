@@ -1,9 +1,9 @@
 """
 /upload route
 
-Accepts a JSON body with the absolute path to a local project folder,
-parses it, and stores the root path in the app state so other routes
-can reference it.
+Registers a JSON body absolute path to a local project folder, parses it,
+and stores the root path + parsed tree in the app state so other routes
+can reference them without re-scanning the disk on every request.
 
 Note: `_state` is a module-level dict protected by `_state_lock`.
 This is appropriate for a single-user local tool; a multi-user production
@@ -16,13 +16,13 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, field_validator
 
-from services.file_parser import parse_project
+from services.file_parser import parse_project_async
 from services import rag_service
 
 router = APIRouter()
 
 # Simple in-process store – guarded by an async lock
-_state: dict[str, str] = {}
+_state: dict = {}
 _state_lock = asyncio.Lock()
 
 
@@ -48,13 +48,16 @@ class UploadRequest(BaseModel):
 @router.post("")
 async def upload_project(req: UploadRequest):
     """
-    Parse the project at *req.path* and cache the root for subsequent calls.
+    Parse the project at *req.path* and cache the root + parsed tree for
+    subsequent calls. The RAG index is pre-warmed in the background so the
+    first chat query starts from a warm cache.
     """
     # Path is already validated/normalized by the Pydantic validator
     root_path = req.path
 
     try:
-        result = parse_project(root_path)
+        # Run the recursive scan in a worker thread (keeps the event loop free)
+        result = await parse_project_async(root_path)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -64,11 +67,15 @@ async def upload_project(req: UploadRequest):
             detail="No supported code files found in this directory. Please check that the folder contains source code.",
         )
 
-    # Invalidate any previously cached RAG index for this project
-    rag_service.invalidate_cache(root_path)
-
     async with _state_lock:
+        # Invalidate any previously cached RAG index for this project
+        rag_service.invalidate_cache(root_path)
         _state["project_root"] = root_path
+        _state["parsed_for"] = root_path
+        _state["parse_result"] = result
+
+    # Preheat the RAG index in the background so /chat responds quickly
+    asyncio.create_task(rag_service.warm_index(root_path))
 
     return {
         "message": "Project uploaded successfully",
@@ -87,4 +94,15 @@ async def get_project_root() -> str:
             status_code=400,
             detail="No project loaded. Please upload a project first.",
         )
-    return root
+    return str(root)
+
+
+async def get_cached_tree(root_path: str):
+    """
+    Return the previously parsed tree for *root_path* if it is still cached,
+    otherwise None. Avoids re-scanning the filesystem on repeated /tree calls.
+    """
+    async with _state_lock:
+        if _state.get("parsed_for") != root_path:
+            return None
+        return _state.get("parse_result")

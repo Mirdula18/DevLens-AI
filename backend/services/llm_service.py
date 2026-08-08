@@ -5,6 +5,7 @@ All prompts are sent to http://localhost:11434/api/generate and the
 response is streamed back and then returned as a single string.
 """
 
+import asyncio
 import json
 import os
 
@@ -18,15 +19,26 @@ OLLAMA_TAGS_URL = f"{OLLAMA_BASE_URL}/api/tags"
 # Default model can be overridden with the OLLAMA_MODEL env var
 DEFAULT_MODEL = os.environ.get("OLLAMA_MODEL", "mistral")
 
-# Shared HTTP client – reuses the TCP connection to Ollama across requests,
-# removing per-request connection overhead.
+# Shared HTTP client – reuses the connection to Ollama across requests.
+# It is bound to the event loop it was created on, and re-created if the
+# running loop changes (e.g. tests, workers, reload).
 _client: httpx.AsyncClient | None = None
+_client_loop: asyncio.AbstractEventLoop | None = None
 
 
 def _get_client() -> httpx.AsyncClient:
-    global _client  # noqa: PLW0603
-    if _client is None or _client.is_closed:
+    global _client, _client_loop  # noqa: PLW0603
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+    if (
+        _client is None
+        or _client.is_closed
+        or (_client_loop is not None and _client_loop is not loop)
+    ):
         _client = httpx.AsyncClient(timeout=180.0)
+        _client_loop = loop
     return _client
 
 

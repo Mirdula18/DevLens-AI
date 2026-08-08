@@ -1,11 +1,13 @@
 """
 /explain route
 
-Sends code to the local LLM and returns an explanation.
-Also exposes a /explain/confusion endpoint for the Confusion Detector feature.
+Streams an AI explanation of code from the local LLM using Server-Sent
+Events (SSE), so the frontend can render tokens as they are generated.
+Also exposes a /explain/confusion endpoint for the Confusion Detector.
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, field_validator
 
 from services import llm_service
@@ -54,10 +56,21 @@ class ConfusionRequest(BaseModel):
         return v
 
 
+async def _sse_events(tokens):
+    """Wrap a token stream into SSE events (error-safe)."""
+    try:
+        async for token in tokens:
+            yield llm_service.sse({"type": "token", "data": token})
+    except Exception as exc:  # noqa: BLE001
+        yield llm_service.sse({"type": "error", "data": f"LLM error: {exc}. Is Ollama running? (ollama serve)"})
+    finally:
+        yield llm_service.sse({"type": "done"})
+
+
 @router.post("")
 async def explain_code(req: ExplainRequest):
     """
-    Explain the provided *code* using the selected *mode*.
+    Stream an explanation of *code* using the selected *mode*.
 
     Modes:
         normal   – structured explanation (default)
@@ -65,29 +78,14 @@ async def explain_code(req: ExplainRequest):
         review   – code review (bugs / bad practices)
         optimize – performance & optimisation suggestions
     """
-    # Validation already done by Pydantic validators
-
-    try:
-        explanation = await llm_service.explain_code(req.code, req.mode, req.model)
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(
-            status_code=502,
-            detail=f"LLM error: {exc}. Is Ollama running? (ollama serve)",
-        ) from exc
-
-    return {"mode": req.mode, "explanation": explanation}
+    stream = llm_service.stream_explain(req.code, req.mode, req.model)
+    return StreamingResponse(_sse_events(stream), media_type="text/event-stream")
 
 
 @router.post("/confusion")
 async def detect_confusion(req: ConfusionRequest):
     """
-    Identify the most confusing / complex sections of the provided code.
+    Stream an analysis of the most confusing / complex sections of *code*.
     """
-    # Validation already done by Pydantic validators
-
-    try:
-        result = await llm_service.detect_confusion(req.code, req.model)
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=f"LLM error: {exc}") from exc
-
-    return {"confusion_analysis": result}
+    stream = llm_service.stream_confusion(req.code, req.model)
+    return StreamingResponse(_sse_events(stream), media_type="text/event-stream")

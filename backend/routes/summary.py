@@ -1,24 +1,69 @@
 """
 /summary route
 
-Generates a high-level project summary by sending a snapshot of the
-codebase to the LLM.
+Builds a representative snapshot of the project (concurrent, non-blocking
+reads) and streams a high-level project report from the LLM via SSE.
 """
 
+import asyncio
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from routes.upload import get_project_root
-from services.file_parser import get_flat_files
+from services.file_parser import get_flat_files_async
 from services import llm_service
-from utils.file_utils import safe_read
+from utils.file_utils import safe_read_async
 
 router = APIRouter()
 
 # Maximum total characters sent to the LLM for the summary
 MAX_SNAPSHOT_CHARS = 40_000
+
+# Per-file excerpt length
+_EXCERPT_BYTES = 2000
+
+
+async def _build_snapshot(root: str) -> str:
+    """
+    Collect a representative snapshot of all project files.
+
+    Reads happen concurrently with a bound on how many files are open at
+    once, keeping the event loop responsive.
+    """
+    file_paths = await get_flat_files_async(root)
+
+    if not file_paths:
+        raise HTTPException(status_code=400, detail="No supported files found in the project.")
+
+    sem = asyncio.Semaphore(32)
+
+    async def read_excerpt(abs_path: str) -> str:
+        async with sem:
+            return await safe_read_async(abs_path, max_bytes=_EXCERPT_CHARS)
+
+    contents = await asyncio.gather(*(read_excerpt(fp) for fp in file_paths))
+
+    snapshot_parts: list[str] = []
+    total_chars = 0
+    for fp, content in zip(file_paths, contents):
+        if content.strip():
+            rel = Path(fp).relative_to(root).as_posix()
+            entry = f"### {rel}\n{content}"
+            snapshot_parts.append(entry)
+            total_chars += len(entry)
+        if total_chars >= MAX_SNAPSHOT_CHARS:
+            break
+
+    if not snapshot_parts:
+        raise HTTPException(
+            status_code=400,
+            detail="No readable code files found. All files may be empty or unreadable.",
+        )
+
+    return "\n\n".join(snapshot_parts)
 
 
 class SummaryRequest(BaseModel):
@@ -28,39 +73,23 @@ class SummaryRequest(BaseModel):
 @router.post("")
 async def generate_summary(req: SummaryRequest):
     """
-    Collect a representative snapshot of all project files and ask the LLM
-    to produce a structured project report.
+    Stream a structured project report built from a snapshot of the codebase.
     """
     root = await get_project_root()
-    file_paths = get_flat_files(root)
-
-    if not file_paths:
-        raise HTTPException(status_code=400, detail="No supported files found in the project.")
-
-    snapshot_parts: list[str] = []
-    total_chars = 0
-
-    for fp in file_paths:
-        if total_chars >= MAX_SNAPSHOT_CHARS:
-            break
-        rel = Path(fp).relative_to(root).as_posix()
-        content = safe_read(fp, max_bytes=2000)  # short excerpt per file
-        if content.strip():  # Only include non-empty files
-            entry = f"### {rel}\n{content}"
-            snapshot_parts.append(entry)
-            total_chars += len(entry)
-
-    if not snapshot_parts:
-        raise HTTPException(
-            status_code=400,
-            detail="No readable code files found. All files may be empty or unreadable.",
-        )
-
-    snapshot = "\n\n".join(snapshot_parts)
 
     try:
-        summary = await llm_service.summarise_project(snapshot, req.model)
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=f"LLM error: {exc}") from exc
+        snapshot = await _build_snapshot(root)
+    except HTTPException:
+        raise
 
-    return {"summary": summary, "files_analysed": len(snapshot_parts)}
+    return StreamingResponse(_summary_events(snapshot, req.model), media_type="text/event-stream")
+
+
+async def _summary_events(snapshot: str, model: str):
+    try:
+        async for token in llm_service.stream_summary(snapshot, model):
+            yield llm_service.sse({"type": "token", "data": token})
+    except Exception as exc:  # noqa: BLE001
+        yield llm_service.sse({"type": "error", "data": f"LLM error: {exc}"})
+    finally:
+        yield llm_service.sse({"type": "done"})

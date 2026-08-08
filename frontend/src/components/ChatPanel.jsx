@@ -6,7 +6,7 @@
  *   model      – the active Ollama model
  */
 import { useState, useRef, useEffect } from 'react'
-import { sendChatMessage } from '../services/api'
+import { streamChat } from '../services/api'
 import LoadingSpinner from './LoadingSpinner'
 import Icon from './icons'
 
@@ -62,20 +62,28 @@ export default function ChatPanel({ hasProject, model }) {
     setInput('')
     setLoading(true)
 
+    // Append a placeholder assistant message that tokens stream into
+    setMessages(prev => [...prev, { role: 'assistant', content: '', sources: [] }])
+
+    const appendToLast = updater =>
+      setMessages(prev => {
+        const arr = [...prev]
+        const last = arr[arr.length - 1]
+        arr[arr.length - 1] = updater(last)
+        return arr
+      })
+
     try {
-      const data = await sendChatMessage(question, 5, model)
-      setMessages(prev => [
-        ...prev,
-        { role: 'assistant', content: data.answer, sources: data.sources },
-      ])
+      await streamChat({ question, topK: 5, model }, {
+        onToken: token => appendToLast(m => ({ ...m, content: m.content + token })),
+        onSources: sources => appendToLast(m => ({ ...m, sources })),
+        onError: err => appendToLast(m => ({
+          ...m,
+          content: m.content || `Error: ${err.message}`,
+        })),
+      })
     } catch (err) {
-      setMessages(prev => [
-        ...prev,
-        {
-          role: 'assistant',
-          content: `Error: ${err.response?.data?.detail ?? err.message}`,
-        },
-      ])
+      appendToLast(m => ({ ...m, content: m.content || `Error: ${err.message}` }))
     } finally {
       setLoading(false)
     }

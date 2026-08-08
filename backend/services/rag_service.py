@@ -13,7 +13,9 @@ that repeated queries don't re-index the same project.
 
 from __future__ import annotations
 
+import asyncio
 import re
+import threading
 from pathlib import Path
 from typing import NamedTuple
 
@@ -25,6 +27,9 @@ from services.file_parser import get_flat_files
 
 # Lazy import so the heavy model is loaded only when RAG is first used
 _model = None
+
+# Guards index construction so concurrent requests don't double-build
+_index_lock = threading.Lock()
 
 
 def _get_model():
@@ -73,41 +78,50 @@ def _chunk_text(text: str, size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP)
 def build_index(root_path: str) -> ProjectIndex:
     """
     Build (or retrieve cached) FAISS index for the project at *root_path*.
+
+    The index is cached per project root; a lock prevents concurrent
+    rebuilds when multiple requests hit an uncached project at once.
     """
     root_path = str(Path(root_path).resolve())
-    if root_path in _index_cache:
-        return _index_cache[root_path]
+    cached = _index_cache.get(root_path)
+    if cached is not None:
+        return cached
 
-    model = _get_model()
-    file_paths = get_flat_files(root_path)
+    with _index_lock:
+        cached = _index_cache.get(root_path)
+        if cached is not None:
+            return cached
 
-    all_chunks: list[Chunk] = []
-    for abs_path in file_paths:
-        content = safe_read(abs_path)
-        if not content.strip():
-            continue
-        rel = Path(abs_path).relative_to(root_path).as_posix()
-        for chunk in _chunk_text(content):
-            all_chunks.append(Chunk(file_path=rel, content=chunk))
+        model = _get_model()
+        file_paths = get_flat_files(root_path)
 
-    if not all_chunks:
-        # Return empty index
-        dim = 384  # all-MiniLM-L6-v2 output dimension
+        all_chunks: list[Chunk] = []
+        for abs_path in file_paths:
+            content = safe_read(abs_path)
+            if not content.strip():
+                continue
+            rel = Path(abs_path).relative_to(root_path).as_posix()
+            for chunk in _chunk_text(content):
+                all_chunks.append(Chunk(file_path=rel, content=chunk))
+
+        if not all_chunks:
+            # Return empty index
+            dim = 384  # all-MiniLM-L6-v2 output dimension
+            idx = faiss.IndexFlatL2(dim)
+            proj = ProjectIndex(chunks=[], index=idx)
+            _index_cache[root_path] = proj
+            return proj
+
+        texts = [c.content for c in all_chunks]
+        embeddings = model.encode(texts, show_progress_bar=False).astype("float32")
+
+        dim = embeddings.shape[1]
         idx = faiss.IndexFlatL2(dim)
-        proj = ProjectIndex(chunks=[], index=idx)
+        idx.add(embeddings)
+
+        proj = ProjectIndex(chunks=all_chunks, index=idx)
         _index_cache[root_path] = proj
         return proj
-
-    texts = [c.content for c in all_chunks]
-    embeddings = model.encode(texts, show_progress_bar=False).astype("float32")
-
-    dim = embeddings.shape[1]
-    idx = faiss.IndexFlatL2(dim)
-    idx.add(embeddings)
-
-    proj = ProjectIndex(chunks=all_chunks, index=idx)
-    _index_cache[root_path] = proj
-    return proj
 
 
 def invalidate_cache(root_path: str) -> None:
@@ -135,6 +149,21 @@ def search(root_path: str, question: str, top_k: int = 5) -> list[Chunk]:
         if idx != -1:
             results.append(proj.chunks[idx])
     return results
+
+
+async def search_async(root_path: str, question: str, top_k: int = 5) -> list[Chunk]:
+    """
+    Async wrapper around :func:`search`.
+
+    Runs the expensive embedding and FAISS look-up in a worker thread so the
+    event loop stays responsive for other requests.
+    """
+    return await asyncio.to_thread(search, root_path, question, top_k)
+
+
+async def warm_index(root_path: str) -> None:
+    """Pre-build the index for *root_path* in a worker thread (fire-and-forget)."""
+    await asyncio.to_thread(build_index, root_path)
 
 
 def build_context(chunks: list[Chunk]) -> str:

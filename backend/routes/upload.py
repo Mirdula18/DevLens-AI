@@ -16,14 +16,28 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, field_validator
 
-from services.file_parser import parse_project_async
 from services import rag_service
+from services.file_parser import parse_project_async
 
 router = APIRouter()
 
 # Simple in-process store – guarded by an async lock
 _state: dict = {}
 _state_lock = asyncio.Lock()
+
+# References to background tasks so they are kept alive until they finish
+_background_tasks: set[asyncio.Task] = set()
+
+
+def _on_background_done(task: asyncio.Task) -> None:
+    """Drop finished tasks and retrieve exceptions to avoid warnings."""
+    _background_tasks.discard(task)
+    if task.cancelled():
+        return
+    try:
+        task.exception()
+    except asyncio.CancelledError:
+        pass
 
 
 class UploadRequest(BaseModel):
@@ -74,8 +88,11 @@ async def upload_project(req: UploadRequest):
         _state["parsed_for"] = root_path
         _state["parse_result"] = result
 
-    # Preheat the RAG index in the background so /chat responds quickly
-    asyncio.create_task(rag_service.warm_index(root_path))
+    # Pre-warm the RAG index in the background so /chat responds quickly.
+    # The task is retained so it is not garbage-collected mid-execution.
+    warm_task = asyncio.create_task(rag_service.warm_index(root_path))
+    _background_tasks.add(warm_task)
+    warm_task.add_done_callback(_on_background_done)
 
     return {
         "message": "Project uploaded successfully",

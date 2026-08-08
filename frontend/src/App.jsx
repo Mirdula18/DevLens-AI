@@ -22,10 +22,10 @@ import {
   uploadProject,
   fetchTree,
   fetchFile,
-  explainCode,
-  detectConfusion,
-  generateSummary,
   fetchModels,
+  streamExplain,
+  streamConfusion,
+  streamSummary,
 } from './services/api'
 
 export default function App() {
@@ -128,10 +128,12 @@ export default function App() {
     setActivePanel('explain')
 
     try {
-      const data = await explainCode(fileContent, mode, model)
-      setExplanation(data.explanation)
+      await streamExplain({ code: fileContent, mode, model }, {
+        onToken: token => setExplanation(prev => prev + token),
+        onError: err => setAiError(err.message),
+      })
     } catch (err) {
-      setAiError(err.response?.data?.detail ?? err.message)
+      setAiError(err.message)
     } finally {
       setAiLoading(false)
     }
@@ -147,10 +149,12 @@ export default function App() {
     setActivePanel('explain')
 
     try {
-      const data = await detectConfusion(fileContent, model)
-      setConfusionAnalysis(data.confusion_analysis)
+      await streamConfusion({ code: fileContent, model }, {
+        onToken: token => setConfusionAnalysis(prev => prev + token),
+        onError: err => setAiError(err.message),
+      })
     } catch (err) {
-      setAiError(err.response?.data?.detail ?? err.message)
+      setAiError(err.message)
     } finally {
       setAiLoading(false)
     }
@@ -165,10 +169,12 @@ export default function App() {
     setActivePanel('explain')
 
     try {
-      const data = await generateSummary(model)
-      setSummary(data.summary)
+      await streamSummary({ model }, {
+        onToken: token => setSummary(prev => prev + token),
+        onError: err => setAiError(err.message),
+      })
     } catch (err) {
-      setAiError(err.response?.data?.detail ?? err.message)
+      setAiError(err.message)
     } finally {
       setAiLoading(false)
     }

@@ -7,6 +7,7 @@ Responsible for:
 - Providing a flat list of file paths for downstream services.
 """
 
+import asyncio
 import os
 from pathlib import Path
 from typing import Any
@@ -113,3 +114,13 @@ def get_flat_files(root_path: str) -> list[str]:
                 result.append(str(full))
 
     return result
+
+
+async def get_flat_files_async(root_path: str) -> list[str]:
+    """Async wrapper around :func:`get_flat_files` (runs the walk in a thread)."""
+    return await asyncio.to_thread(get_flat_files, root_path)
+
+
+async def parse_project_async(root_path: str) -> dict[str, Any]:
+    """Async wrapper around :func:`parse_project` (runs the scan in a thread)."""
+    return await asyncio.to_thread(parse_project, root_path)

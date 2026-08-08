@@ -43,8 +43,17 @@ def _get_client() -> httpx.AsyncClient:
 
 
 def sse(event: dict) -> str:
-    """Encode *event* as a single Server-Sent-Events message."""
+    """Format *event* as a Server-Sent-Events message."""
     return f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+
+async def aclose_client() -> None:
+    """Close the shared HTTP client (called on application shutdown)."""
+    global _client, _client_loop  # noqa: PLW0603
+    if _client is not None and not _client.is_closed:
+        await _client.aclose()
+    _client = None
+    _client_loop = None
 
 # ── Prompt templates ────────────────────────────────────────────────────────
 
@@ -238,6 +247,15 @@ async def list_models() -> list[str]:
         return [m for m in models if m]
     except Exception:  # noqa: BLE001
         return [DEFAULT_MODEL]
+
+
+async def is_ollama_available() -> bool:
+    """Return True if the Ollama server (and model registry) is reachable."""
+    try:
+        response = await _get_client().get(OLLAMA_TAGS_URL)
+        return response.status_code < 500
+    except Exception:  # noqa: BLE001
+        return False
 
 
 async def explain_code(code: str, mode: str = "normal", model: str = DEFAULT_MODEL) -> str:

@@ -10,7 +10,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Query
 
 from routes.upload import get_project_root
-from utils.file_utils import safe_read_async, is_allowed_file
+from utils.file_utils import is_allowed_file, safe_read_async
 
 router = APIRouter()
 
@@ -36,7 +36,10 @@ def _resolve_safe_path(root: str, relative: str) -> Path:
     try:
         full_path.relative_to(root_resolved)
     except ValueError:
-        raise HTTPException(status_code=403, detail="Access denied: path traversal detected.")
+        raise HTTPException(
+            status_code=403,
+            detail="Access denied: path traversal detected.",
+        ) from None
 
     return full_path
 

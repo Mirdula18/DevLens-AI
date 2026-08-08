@@ -9,8 +9,8 @@ filesystem (which is the hot path when the frontend re-fetches the tree).
 
 from fastapi import APIRouter, HTTPException
 
+from routes.upload import get_cached_tree, get_project_root
 from services.file_parser import parse_project_async
-from routes.upload import get_project_root, get_cached_tree
 
 router = APIRouter()
 

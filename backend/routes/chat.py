@@ -1,17 +1,19 @@
 """
 /chat route
 
-Handles codebase Q&A using Retrieval-Augmented Generation (RAG).
+Answers codebase Q&A using Retrieval-Augmented Generation (RAG) and
+streams the result token-by-token via SSE.
 
 Flow:
 1. User sends a natural-language question.
 2. The question is embedded and the closest code chunks are retrieved
-   from the FAISS index.
-3. The retrieved chunks + question are sent to the LLM.
-4. The answer is returned along with source file references.
+   from the FAISS index (in a worker thread, off the event loop).
+3. The retrieved chunks + question stream to the LLM.
+4. Source file references are sent after the answer.
 """
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, field_validator
 
 from routes.upload import get_project_root
@@ -59,31 +61,45 @@ class ChatRequest(BaseModel):
 @router.post("")
 async def chat(req: ChatRequest):
     """
-    Answer *req.question* using RAG over the loaded project.
+    Stream an answer to *req.question* using RAG over the loaded project.
     """
-    # Validation already done by Pydantic validators
-
     root = await get_project_root()
 
-    # Retrieve relevant chunks
+    # Retrieve relevant chunks (embedding + FAISS run in a worker thread)
     try:
-        chunks = rag_service.search(root, req.question, top_k=req.top_k)
+        chunks = await rag_service.search_async(root, req.question, top_k=req.top_k)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"RAG search error: {exc}") from exc
 
     if not chunks:
-        return {
-            "answer": "I could not find any relevant code in the project for your question.",
-            "sources": [],
-        }
+        return StreamingResponse(
+            _fallback_events("I could not find any relevant code in the project for your question."),
+            media_type="text/event-stream",
+        )
 
     context = _cap_context(rag_service.build_context(chunks))
+    return StreamingResponse(
+        _rag_events(req.question, context, chunks, req.model),
+        media_type="text/event-stream",
+    )
 
+
+async def _fallback_events(message: str):
+    yield llm_service.sse({"type": "token", "data": message})
+    yield llm_service.sse({"type": "sources", "data": []})
+    yield llm_service.sse({"type": "done"})
+
+
+async def _rag_events(question: str, context: str, chunks, model: str):
+    failed = False
     try:
-        answer = await llm_service.answer_with_rag(req.question, context, req.model)
+        async for token in llm_service.stream_rag(question, context, model):
+            yield llm_service.sse({"type": "token", "data": token})
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=f"LLM error: {exc}") from exc
+        failed = True
+        yield llm_service.sse({"type": "error", "data": f"LLM error: {exc}"})
 
-    sources = list({c.file_path for c in chunks})  # unique source files
-
-    return {"answer": answer, "sources": sources}
+    if not failed:
+        # Source references (unique files) after the answer
+        yield llm_service.sse({"type": "sources", "data": list({c.file_path for c in chunks})})
+    yield llm_service.sse({"type": "done", "data": "ok"})

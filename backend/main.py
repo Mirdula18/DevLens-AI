@@ -4,17 +4,30 @@ DevLens AI – FastAPI entry point.
 Starts the server and registers all route modules.
 """
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from routes import upload, tree, file, explain, summary, chat, models
+from routes import chat, explain, file, models, summary, tree, upload
+from services import llm_service
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifecycle – closes pooled HTTP connections on shutdown."""
+    try:
+        yield
+    finally:
+        await llm_service.aclose_client()
 
 app = FastAPI(
     title="DevLens AI",
     description="Offline AI-powered codebase explainer",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 # Allow the Vite dev-server (port 5173) to call the API
@@ -54,5 +67,9 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 @app.get("/health")
 async def health_check():
-    """Simple liveness probe."""
-    return {"status": "ok"}
+    """Liveness probe plus a check that the local Ollama server is reachable."""
+    llm_ok = await llm_service.is_ollama_available()
+    return {
+        "status": "ok" if llm_ok else "degraded",
+        "llm": "ok" if llm_ok else "unreachable",
+    }

@@ -9,6 +9,8 @@ Utility helpers shared across the backend.
 import os
 from pathlib import Path
 
+import aiofiles
+
 # Extensions we are willing to parse / send to the LLM
 ALLOWED_EXTENSIONS: set[str] = {
     ".py", ".js", ".ts", ".tsx", ".jsx",
@@ -52,6 +54,19 @@ def safe_read(path: str | Path, max_bytes: int = MAX_FILE_SIZE) -> str:
     try:
         with open(path, "rb") as fh:
             raw = fh.read(max_bytes)
+        return raw.decode("utf-8", errors="replace")
+    except OSError:
+        return "[Error: file could not be read]"
+
+
+async def safe_read_async(path: str | Path, max_bytes: int = MAX_FILE_SIZE) -> str:
+    """
+    Async (non-blocking) variant of :func:`safe_read` using aiofiles.
+    Keeps the event loop free while reading from disk.
+    """
+    try:
+        async with aiofiles.open(path, "rb") as fh:
+            raw = await fh.read(max_bytes)
         return raw.decode("utf-8", errors="replace")
     except OSError:
         return "[Error: file could not be read]"

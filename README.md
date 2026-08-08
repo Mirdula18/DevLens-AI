@@ -148,19 +148,38 @@ The model dropdown in the app header is populated automatically from the models 
 6. Click **Project Summary** to analyse the whole codebase.
 7. Switch to the **Chat** tab and ask natural-language questions.
 
+### Performance Notes
+
+- **Streaming responses** — LLM answers stream token-by-token via SSE, so text appears progressively instead of after a long wait.
+- **Tree caching** — the file tree is parsed once at upload and served from memory on subsequent requests.
+- **RAG pre-warming** — the FAISS index is built in the background right after upload, so the first chat query uses a warm cache.
+- **Non-blocking I/O** — disk reads use `aiofiles`, and CPU-heavy work (scanning, embedding, FAISS search) runs off the event loop.
+- **Connection reuse** — a single HTTP client keeps the connection to Ollama open across requests.
+
 ---
 
 ## API Reference
+
+LLM-backed endpoints (`/explain`, `/explain/confusion`, `/summary`, `/chat`) return **Server-Sent Events** (`text/event-stream`) so responses stream token-by-token.
+
+SSE event types:
+
+| Type | Payload | Meaning |
+|---|---|---|
+| `token` | string | one generated token |
+| `sources` | string[] | source files (chat only) |
+| `error` | string | an error occurred |
+| `done` | — | the stream finished |
 
 | Method | Endpoint | Description |
 |---|---|---|
 | POST | `/upload` | Register a project folder `{ "path": "/abs/path" }` |
 | GET | `/tree` | Get the file-tree JSON |
 | GET | `/file?path=<rel>` | Get a file's content |
-| POST | `/explain` | Explain code `{ "code", "mode", "model" }` |
-| POST | `/explain/confusion` | Detect confusing sections `{ "code" }` |
-| POST | `/summary` | Generate a project summary `{ "model" }` |
-| POST | `/chat` | RAG Q&A `{ "question", "top_k", "model" }` |
+| POST | `/explain` | Explain code `{ "code", "mode", "model" }` (streamed) |
+| POST | `/explain/confusion` | Detect confusing sections `{ "code" }` (streamed) |
+| POST | `/summary` | Generate a project summary `{ "model" }` (streamed) |
+| POST | `/chat` | RAG Q&A `{ "question", "top_k", "model" }` (streamed) |
 | GET | `/models` | List installed models and the default |
 | GET | `/health` | Liveness probe |
 

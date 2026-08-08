@@ -42,7 +42,7 @@ async def _build_snapshot(root: str) -> str:
 
     async def read_excerpt(abs_path: str) -> str:
         async with sem:
-            return await safe_read_async(abs_path, max_bytes=_EXCERPT_CHARS)
+            return await safe_read_async(abs_path, max_bytes=_EXCERPT_BYTES)
 
     contents = await asyncio.gather(*(read_excerpt(fp) for fp in file_paths))
 

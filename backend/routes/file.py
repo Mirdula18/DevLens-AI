@@ -10,7 +10,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Query
 
 from routes.upload import get_project_root
-from utils.file_utils import safe_read, is_allowed_file
+from utils.file_utils import safe_read_async, is_allowed_file
 
 router = APIRouter()
 
@@ -58,7 +58,7 @@ async def get_file(path: str = Query(..., description="Relative path within the 
     if not is_allowed_file(full_path):
         raise HTTPException(status_code=400, detail="File type not supported or file too large.")
 
-    content = safe_read(full_path)
+    content = await safe_read_async(full_path)
     return {
         "path": path,
         "name": full_path.name,

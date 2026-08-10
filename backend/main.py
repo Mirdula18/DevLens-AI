@@ -1,16 +1,12 @@
 """
 DevLens AI – FastAPI entry point.
-
 Starts the server and registers all route modules.
 """
-
 from contextlib import asynccontextmanager
-
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-
 from routes import chat, explain, file, models, summary, tree, upload
 from services import llm_service
 

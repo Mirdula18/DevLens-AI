@@ -4,16 +4,17 @@
  * Layout (dark, three-column):
  * ┌─────────────┬──────────────────────┬──────────────────────┐
  * │  Sidebar    │   CodeViewer         │  ExplanationPanel    │
- * │  (file tree)│   (file content)     │  or ChatPanel        │
+ * │  (file tree)│   (file content)     │  / Chat / Insights   │
  * └─────────────┴──────────────────────┴──────────────────────┘
  *
- * The header tabs switch the right panel between Explain and Chat.
+ * The header tabs switch the right panel between Explain, Chat and Insights.
  */
 import { useCallback, useState, useEffect, useRef } from 'react'
 import Sidebar from './components/Sidebar'
 import CodeViewer from './components/CodeViewer'
 import ExplanationPanel from './components/ExplanationPanel'
 import ChatPanel from './components/ChatPanel'
+import InsightsPanel from './components/InsightsPanel'
 import ModeSelector from './components/ModeSelector'
 import ModelSelector from './components/ModelSelector'
 import StatusIndicator from './components/StatusIndicator'
@@ -41,6 +42,7 @@ export default function App() {
   const [fileContent, setFileContent] = useState('')
   const [fileName, setFileName] = useState('')
   const [fileLoading, setFileLoading] = useState(false)
+  const [highlight, setHighlight] = useState(null)
 
   // Explanation / model state
   const [mode, setMode] = useState('normal')
@@ -52,7 +54,7 @@ export default function App() {
   const [aiLoading, setAiLoading] = useState(false)
   const [aiError, setAiError] = useState(null)
 
-  // Panel tab: 'explain' | 'chat'
+  // Panel tab: 'explain' | 'chat' | 'insights'
   const [activePanel, setActivePanel] = useState('explain')
 
   // Controller for the in-flight explain / confusion / summary stream
@@ -140,6 +142,7 @@ export default function App() {
     setUploadStatus({ loading: true, error: null, projectName: '' })
     setTree([])
     setSelectedPath('')
+    setHighlight(null)
     setFileContent('')
     setFileName('')
 
@@ -160,7 +163,15 @@ export default function App() {
     }
   }
 
-  async function handleFileClick(relativePath) {
+  /**
+   * Open *relativePath* in the code viewer, optionally highlighting a
+   * `{ start, end }` line range (used by chat citations).
+   */
+  async function handleFileClick(relativePath, highlightRange = null) {
+    setHighlight(highlightRange)
+    // Re-opening the current file (e.g. another citation in it) only moves the highlight
+    if (relativePath === selectedPath && fileContent && !fileLoading) return
+
     resetAi()
     setSelectedPath(relativePath)
     setFileLoading(true)
@@ -225,6 +236,7 @@ export default function App() {
             {[
               { id: 'explain', label: 'Explain', Icon: Icon.Sparkles },
               { id: 'chat', label: 'Chat', Icon: Icon.Message },
+              { id: 'insights', label: 'Insights', Icon: Icon.Chart },
             ].map(({ id, label, Icon: PanelIcon }) => (
               <button
                 key={id}
@@ -262,7 +274,7 @@ export default function App() {
               <span className="text-sm text-gray-500">Loading file…</span>
             </div>
           ) : (
-            <CodeViewer fileName={fileName} content={fileContent} />
+            <CodeViewer fileName={fileName} content={fileContent} highlight={highlight} />
           )}
         </main>
 
@@ -284,11 +296,27 @@ export default function App() {
               onStop={stopStream}
               hasFile={hasFile}
               hasProject={hasProject}
+              fileName={fileName}
+              projectName={uploadStatus.projectName}
             />
           </div>
+          {/* Keyed by project so loading a new project starts fresh */}
           <div className={activePanel === 'chat' ? 'flex h-full flex-col overflow-hidden' : 'hidden'}>
-            {/* Keyed by project so loading a new project starts a fresh chat */}
-            <ChatPanel key={projectRoot} hasProject={hasProject} model={model} />
+            <ChatPanel
+              key={projectRoot}
+              hasProject={hasProject}
+              projectName={uploadStatus.projectName}
+              model={model}
+              onOpenSource={s => handleFileClick(s.path, { start: s.start_line, end: s.end_line })}
+            />
+          </div>
+          <div className={activePanel === 'insights' ? 'flex h-full flex-col overflow-hidden' : 'hidden'}>
+            <InsightsPanel
+              key={projectRoot}
+              active={activePanel === 'insights'}
+              hasProject={hasProject}
+              onOpenFile={path => handleFileClick(path)}
+            />
           </div>
         </aside>
       </div>

@@ -36,6 +36,11 @@ export async function fetchModels() {
   return data
 }
 
+/** True if *err* comes from an AbortController cancelling the request. */
+export function isAbort(err) {
+  return err?.name === 'AbortError'
+}
+
 /**
  * Stream a POST request over Server-Sent Events.
  *
@@ -45,17 +50,20 @@ export async function fetchModels() {
  *   onToken(t)   – called for each streamed token
  *   onSources(s) – called once with the source-file array (chat only)
  *   onError(e)   – called on SSE or HTTP errors
- * @returns {Promise<void>} resolves when the stream finishes
+ *   signal       – optional AbortSignal; aborting ends the stream quietly
+ * @returns {Promise<void>} resolves when the stream finishes or is aborted
  */
-async function requestStream(path, body, { onToken, onSources, onError } = {}) {
+async function requestStream(path, body, { onToken, onSources, onError, signal } = {}) {
   let resp
   try {
     resp = await fetch(path, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+      signal,
     })
   } catch (err) {
+    if (isAbort(err)) return
     onError?.(err)
     throw err
   }
@@ -79,7 +87,15 @@ async function requestStream(path, body, { onToken, onSources, onError } = {}) {
   let buffer = ''
 
   while (true) {
-    const { done, value } = await reader.read()
+    let result
+    try {
+      result = await reader.read()
+    } catch (err) {
+      if (isAbort(err)) return
+      onError?.(err)
+      throw err
+    }
+    const { done, value } = result
     if (done) break
 
     buffer += decoder.decode(value, { stream: true })
@@ -87,10 +103,10 @@ async function requestStream(path, body, { onToken, onSources, onError } = {}) {
     // SSE messages are separated by a blank line
     let idx = buffer.indexOf('\n\n')
     while (idx !== -1) {
-      const chunk = buffer.slice(0, idx)
+      const message = buffer.slice(0, idx)
       buffer = buffer.slice(idx + 2)
 
-      const line = chunk.split('\n').find(l => l.startsWith('data:'))
+      const line = message.split('\n').find(l => l.startsWith('data:'))
       if (line) {
         let evt
         try {

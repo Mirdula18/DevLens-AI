@@ -36,7 +36,7 @@ describe('requestStream (via streamChat / streamExplain)', () => {
     expect(onSources).toHaveBeenCalledWith(['a.py'])
     const [url, opts] = fetch.mock.calls[0]
     expect(url).toBe('/chat')
-    expect(JSON.parse(opts.body)).toEqual({ question: 'q', top_k: 5, model: 'm' })
+    expect(JSON.parse(opts.body)).toEqual({ question: 'q', top_k: 5, model: 'm', history: [] })
   })
 
   it('reassembles events split across network chunks', async () => {

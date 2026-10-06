@@ -36,6 +36,12 @@ export async function fetchModels() {
   return data
 }
 
+/** Fetch codebase metrics (languages, line counts, largest files). */
+export async function fetchStats() {
+  const { data } = await api.get('/stats')
+  return data
+}
+
 /** Check backend liveness and whether Ollama is reachable. */
 export async function fetchHealth() {
   const { data } = await api.get('/health', { timeout: 5000 })
@@ -152,7 +158,10 @@ export function streamSummary({ model }, handlers) {
   return requestStream('/summary', { model }, handlers)
 }
 
-/** Stream an answer to a codebase question. */
-export function streamChat({ question, topK = 5, model }, handlers) {
-  return requestStream('/chat', { question, top_k: topK, model }, handlers)
+/**
+ * Stream an answer to a codebase question.
+ * *history* is a list of earlier `{ role, content }` turns for follow-ups.
+ */
+export function streamChat({ question, topK = 5, model, history = [] }, handlers) {
+  return requestStream('/chat', { question, top_k: topK, model, history }, handlers)
 }

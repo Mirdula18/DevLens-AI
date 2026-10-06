@@ -1,17 +1,26 @@
 /**
- * ChatPanel – Codebase Q&A using RAG.
+ * ChatPanel – multi-turn codebase Q&A using RAG.
+ *
+ * Previous turns are sent with each question so follow-ups work, and each
+ * answer lists clickable citations that open the file at the cited lines.
  *
  * Props:
- *   hasProject – bool (a project must be loaded)
- *   model      – the active Ollama model
+ *   hasProject   – bool (a project must be loaded)
+ *   projectName  – name of the loaded project (used for exports)
+ *   model        – the active Ollama model
+ *   onOpenSource – callback({ path, start_line, end_line }) for citations
  */
 import { useState, useRef, useEffect } from 'react'
 import { streamChat } from '../services/api'
+import { chatToMarkdown, downloadMarkdown, formatSource, slugify } from '../utils/download'
 import FormattedText from './FormattedText'
 import LoadingSpinner from './LoadingSpinner'
 import Icon from './icons'
 
-function Message({ msg }) {
+// Previous messages sent as conversation memory (the backend trims further)
+const HISTORY_MESSAGES = 6
+
+function Message({ msg, onOpenSource }) {
   const isUser = msg.role === 'user'
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
@@ -31,16 +40,25 @@ function Message({ msg }) {
         )}
         {msg.sources && msg.sources.length > 0 && (
           <div className="mt-2.5 border-t border-surface-600/70 pt-2">
-            <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-gray-500">
+            <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-gray-500">
               Sources
             </p>
-            <ul className="space-y-0.5">
-              {msg.sources.map(s => (
-                <li key={s} className="flex items-center gap-1.5 truncate text-xs text-gray-400">
-                  <Icon.File className="h-3 w-3 flex-shrink-0 text-gray-500" />
-                  <span className="truncate">{s}</span>
-                </li>
-              ))}
+            <ul className="flex flex-wrap gap-1.5">
+              {msg.sources.map(s => {
+                const label = formatSource(s)
+                return (
+                  <li key={label} className="max-w-full">
+                    <button
+                      onClick={() => onOpenSource(s)}
+                      title={`Open ${label}`}
+                      className="flex max-w-full items-center gap-1 rounded border border-surface-600 bg-surface-700 px-1.5 py-0.5 font-mono text-[11px] text-gray-300 transition-colors hover:border-accent hover:text-white"
+                    >
+                      <Icon.File className="h-3 w-3 flex-shrink-0 text-gray-500" />
+                      <span className="truncate">{label}</span>
+                    </button>
+                  </li>
+                )
+              })}
             </ul>
           </div>
         )}
@@ -49,7 +67,7 @@ function Message({ msg }) {
   )
 }
 
-export default function ChatPanel({ hasProject, model }) {
+export default function ChatPanel({ hasProject, projectName, model, onOpenSource }) {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -68,6 +86,12 @@ export default function ChatPanel({ hasProject, model }) {
     e.preventDefault()
     const question = input.trim()
     if (!question || loading) return
+
+    // Earlier successful turns become the conversation memory
+    const history = messages
+      .filter(m => m.content && !m.error)
+      .slice(-HISTORY_MESSAGES)
+      .map(({ role, content }) => ({ role, content }))
 
     // The user message plus a placeholder assistant message that tokens stream into
     setMessages(prev => [
@@ -91,7 +115,7 @@ export default function ChatPanel({ hasProject, model }) {
       updateLast(m => (m.content ? m : { ...m, content: `Error: ${err.message}`, error: true }))
 
     try {
-      await streamChat({ question, topK: 5, model }, {
+      await streamChat({ question, topK: 5, model, history }, {
         signal: controller.signal,
         onToken: token => updateLast(m => ({ ...m, content: m.content + token })),
         onSources: sources => updateLast(m => ({ ...m, sources })),
@@ -119,11 +143,18 @@ export default function ChatPanel({ hasProject, model }) {
     setMessages([])
   }
 
+  function handleExport() {
+    downloadMarkdown(`devlens-chat-${slugify(projectName)}.md`, chatToMarkdown(projectName, messages))
+  }
+
   // While waiting for the first token the placeholder is empty – show a
   // spinner instead of an empty bubble
   const lastMsg = messages[messages.length - 1]
   const waiting = loading && lastMsg?.role === 'assistant' && !lastMsg.content
   const visible = waiting ? messages.slice(0, -1) : messages
+
+  const headerButton =
+    'rounded px-2 py-1 text-[11px] text-gray-500 transition-colors hover:bg-surface-700 hover:text-gray-200 disabled:opacity-40'
 
   return (
     <div className="flex h-full flex-col bg-surface-900">
@@ -135,17 +166,18 @@ export default function ChatPanel({ hasProject, model }) {
         <div className="flex-1">
           <h2 className="text-sm font-semibold text-gray-200">Codebase Chat</h2>
           <p className="text-[11px] text-gray-500">
-            RAG-powered Q&A over the loaded project
+            RAG-powered Q&A with follow-up questions
           </p>
         </div>
         {messages.length > 0 && (
-          <button
-            onClick={handleClear}
-            title="Clear conversation"
-            className="rounded px-2 py-1 text-[11px] text-gray-500 transition-colors hover:bg-surface-700 hover:text-gray-200"
-          >
-            Clear
-          </button>
+          <>
+            <button onClick={handleExport} disabled={loading} title="Download as Markdown" className={headerButton}>
+              Export
+            </button>
+            <button onClick={handleClear} title="Clear conversation" className={headerButton}>
+              Clear
+            </button>
+          </>
         )}
       </div>
 
@@ -169,7 +201,7 @@ export default function ChatPanel({ hasProject, model }) {
           </div>
         )}
         {visible.map((msg, i) => (
-          <Message key={i} msg={msg} />
+          <Message key={i} msg={msg} onOpenSource={onOpenSource} />
         ))}
         {waiting && (
           <div className="py-4">

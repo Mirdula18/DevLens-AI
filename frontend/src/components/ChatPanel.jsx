@@ -7,6 +7,7 @@
  */
 import { useState, useRef, useEffect } from 'react'
 import { streamChat } from '../services/api'
+import FormattedText from './FormattedText'
 import LoadingSpinner from './LoadingSpinner'
 import Icon from './icons'
 
@@ -23,7 +24,11 @@ function Message({ msg }) {
               : 'rounded-bl-sm border border-surface-600 bg-surface-800 text-gray-200'
         }`}
       >
-        <p className="whitespace-pre-wrap">{msg.content}</p>
+        {isUser || msg.error ? (
+          <p className="whitespace-pre-wrap">{msg.content}</p>
+        ) : (
+          <FormattedText text={msg.content} />
+        )}
         {msg.sources && msg.sources.length > 0 && (
           <div className="mt-2.5 border-t border-surface-600/70 pt-2">
             <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-gray-500">

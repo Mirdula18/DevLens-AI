@@ -17,6 +17,7 @@
  *   hasProject        – bool (a project is loaded)
  */
 import { useState } from 'react'
+import FormattedText from './FormattedText'
 import LoadingSpinner from './LoadingSpinner'
 import Icon from './icons'
 
@@ -25,55 +26,6 @@ const MODE_LABELS = {
   eli5: 'ELI5',
   review: 'Code Review',
   optimize: 'Optimization',
-}
-
-// Render markdown-ish text: bold **text**, bullets, headings
-function FormattedText({ text }) {
-  if (!text) return null
-
-  const lines = text.split('\n')
-  return (
-    <div className="space-y-1.5 text-sm leading-relaxed text-gray-300">
-      {lines.map((line, i) => {
-        // Numbered list (e.g. "1. ...")
-        if (/^\d+\.\s/.test(line)) {
-          return (
-            <p key={i} className="flex gap-2">
-              <span className="text-accent">{line.match(/^\d+/)[0]}.</span>
-              <span>{line.replace(/^\d+\.\s/, '')}</span>
-            </p>
-          )
-        }
-        // Heading lines (## or ###)
-        if (/^#{2,3}\s/.test(line)) {
-          return (
-            <p key={i} className="mt-4 flex items-center gap-2 font-semibold text-gray-100 first:mt-0">
-              <span className="h-3 w-0.5 rounded bg-accent" />
-              <span>{line.replace(/^#{2,3}\s/, '')}</span>
-            </p>
-          )
-        }
-        // Bold (wrap **text** with strong)
-        const parts = line.split(/(\*\*[^*]+\*\*)/)
-        return (
-          <p key={i} className={line.startsWith('- ') || line.startsWith('* ') ? 'ml-4 flex gap-2' : ''}>
-            {(line.startsWith('- ') || line.startsWith('* ')) && (
-              <span className="mt-1.5 h-1 w-1 flex-shrink-0 rounded-full bg-surface-500" />
-            )}
-            {parts.map((part, j) =>
-              /^\*\*[^*]+\*\*$/.test(part) ? (
-                <strong key={j} className="text-white">
-                  {part.replace(/\*\*/g, '')}
-                </strong>
-              ) : (
-                part
-              )
-            )}
-          </p>
-        )
-      })}
-    </div>
-  )
 }
 
 function ActionButton({ icon: BtnIcon, label, title, onClick, disabled, primary }) {
@@ -187,7 +139,7 @@ export default function ExplanationPanel({
         {explanation && (
           <ResultSection
             icon={Icon.Sparkles}
-            title={`Explanation · ${MODE_LABELS[mode] ?? mode}`}
+            title={mode === 'normal' ? 'Explanation' : `Explanation · ${MODE_LABELS[mode] ?? mode}`}
             text={explanation}
             streaming={loading}
           />

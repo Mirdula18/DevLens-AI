@@ -1,0 +1,27 @@
+# DevLens AI – run the whole app with:  docker compose up --build
+#
+# Ollama runs on the host (install it and `ollama pull mistral` first).
+# Projects to analyse are mounted read-only at /projects; set PROJECTS_DIR
+# to the folder that contains them, then load e.g. /projects/my-app in the UI.
+
+services:
+  backend:
+    build: ./backend
+    environment:
+      OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-mistral}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ${PROJECTS_DIR:-.}:/projects:ro
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    depends_on:
+      backend:
+        condition: service_healthy
+    # Bound to localhost only: the backend can read every mounted project
+    ports:
+      - "127.0.0.1:${DEVLENS_PORT:-8080}:80"
+    restart: unless-stopped

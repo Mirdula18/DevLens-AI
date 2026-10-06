@@ -1,15 +1,15 @@
 /**
  * App – root component.
  *
- * Layout (dark, two-column):
+ * Layout (dark, three-column):
  * ┌─────────────┬──────────────────────┬──────────────────────┐
  * │  Sidebar    │   CodeViewer         │  ExplanationPanel    │
- * │  (file tree)│   (file content)     │  (AI explanations)   │
+ * │  (file tree)│   (file content)     │  or ChatPanel        │
  * └─────────────┴──────────────────────┴──────────────────────┘
  *
- * A bottom "Chat" tab toggles the ChatPanel.
+ * The header tabs switch the right panel between Explain and Chat.
  */
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Sidebar from './components/Sidebar'
 import CodeViewer from './components/CodeViewer'
 import ExplanationPanel from './components/ExplanationPanel'
@@ -53,6 +53,9 @@ export default function App() {
   // Panel tab: 'explain' | 'chat'
   const [activePanel, setActivePanel] = useState('explain')
 
+  // Controller for the in-flight explain / confusion / summary stream
+  const streamRef = useRef(null)
+
   // ── Handlers ────────────────────────────────────────────────────────────────
 
   // Load the available models from Ollama on startup
@@ -64,7 +67,7 @@ export default function App() {
         if (!active) return
         if (data.models?.length) {
           setAvailableModels(data.models)
-          setModel(data.models[0])
+          setModel(data.models.includes(data.default) ? data.default : data.models[0])
         }
       } catch {
         // Ollama unavailable – keep the fallback default
@@ -75,109 +78,113 @@ export default function App() {
     }
   }, [])
 
+  // Cancel any running stream when the app unmounts
+  useEffect(() => () => streamRef.current?.abort(), [])
+
+  /** Abort the running AI stream (if any), keeping the text received so far. */
+  function stopStream() {
+    streamRef.current?.abort()
+    streamRef.current = null
+    setAiLoading(false)
+  }
+
+  /** Abort the running AI stream (if any) and clear its results. */
+  function resetAi() {
+    stopStream()
+    setAiError(null)
+    setExplanation('')
+    setConfusionAnalysis('')
+    setSummary('')
+  }
+
+  /**
+   * Run one AI stream, appending tokens via *setText*. Starting a new stream
+   * cancels the previous one so stale tokens never leak into the new view.
+   */
+  async function runStream(start, setText) {
+    resetAi()
+    setActivePanel('explain')
+    setAiLoading(true)
+
+    const controller = new AbortController()
+    streamRef.current = controller
+    const live = () => streamRef.current === controller
+
+    try {
+      await start({
+        signal: controller.signal,
+        onToken: token => live() && setText(prev => prev + token),
+        onError: err => live() && setAiError(err.message),
+      })
+    } catch (err) {
+      if (live()) setAiError(err.message)
+    } finally {
+      if (live()) {
+        streamRef.current = null
+        setAiLoading(false)
+      }
+    }
+  }
+
   async function handleUpload(path) {
+    resetAi()
     setUploadStatus({ loading: true, error: null, projectName: '' })
     setTree([])
     setSelectedPath('')
     setFileContent('')
-    setExplanation('')
-    setConfusionAnalysis('')
-    setSummary('')
+    setFileName('')
 
     try {
       const uploadResult = await uploadProject(path)
       const treeResult = await fetchTree()
-      setProjectRoot(path)
+      setProjectRoot(uploadResult.path ?? path)
       setTree(treeResult.tree ?? [])
       setUploadStatus({ loading: false, error: null, projectName: uploadResult.root })
     } catch (err) {
+      setProjectRoot('')
       setUploadStatus({
         loading: false,
-        error: err.response?.data?.detail ?? err.message,
+        error: formatError(err),
         projectName: '',
       })
     }
   }
 
   async function handleFileClick(relativePath) {
+    resetAi()
     setSelectedPath(relativePath)
     setFileLoading(true)
-    setExplanation('')
-    setConfusionAnalysis('')
-    setAiError(null)
 
     try {
       const data = await fetchFile(relativePath)
       setFileContent(data.content)
       setFileName(data.name)
     } catch (err) {
-      setFileContent(`Error loading file: ${err.response?.data?.detail ?? err.message}`)
+      setFileContent(`Error loading file: ${formatError(err)}`)
       setFileName(relativePath.split('/').pop())
     } finally {
       setFileLoading(false)
     }
   }
 
-  async function handleExplain() {
+  function handleExplain() {
     if (!fileContent) return
-    setAiLoading(true)
-    setAiError(null)
-    setExplanation('')
-    setConfusionAnalysis('')
-    setSummary('')
-    setActivePanel('explain')
-
-    try {
-      await streamExplain({ code: fileContent, mode, model }, {
-        onToken: token => setExplanation(prev => prev + token),
-        onError: err => setAiError(err.message),
-      })
-    } catch (err) {
-      setAiError(err.message)
-    } finally {
-      setAiLoading(false)
-    }
+    runStream(
+      handlers => streamExplain({ code: fileContent, mode, model }, handlers),
+      setExplanation,
+    )
   }
 
-  async function handleDetectConfusion() {
+  function handleDetectConfusion() {
     if (!fileContent) return
-    setAiLoading(true)
-    setAiError(null)
-    setExplanation('')
-    setConfusionAnalysis('')
-    setSummary('')
-    setActivePanel('explain')
-
-    try {
-      await streamConfusion({ code: fileContent, model }, {
-        onToken: token => setConfusionAnalysis(prev => prev + token),
-        onError: err => setAiError(err.message),
-      })
-    } catch (err) {
-      setAiError(err.message)
-    } finally {
-      setAiLoading(false)
-    }
+    runStream(
+      handlers => streamConfusion({ code: fileContent, model }, handlers),
+      setConfusionAnalysis,
+    )
   }
 
-  async function handleSummary() {
-    setAiLoading(true)
-    setAiError(null)
-    setExplanation('')
-    setConfusionAnalysis('')
-    setSummary('')
-    setActivePanel('explain')
-
-    try {
-      await streamSummary({ model }, {
-        onToken: token => setSummary(prev => prev + token),
-        onError: err => setAiError(err.message),
-      })
-    } catch (err) {
-      setAiError(err.message)
-    } finally {
-      setAiLoading(false)
-    }
+  function handleSummary() {
+    runStream(handlers => streamSummary({ model }, handlers), setSummary)
   }
 
   const hasProject = Boolean(projectRoot)
@@ -247,30 +254,40 @@ export default function App() {
           )}
         </main>
 
-        {/* Right panel */}
+        {/* Right panel – both panels stay mounted so chat history and
+            in-flight streams survive switching tabs */}
         <aside className="flex w-96 flex-shrink-0 flex-col overflow-hidden">
-          {activePanel === 'explain' ? (
-            <>
-              <ModeSelector mode={mode} onChange={setMode} />
-              <ExplanationPanel
-                explanation={explanation}
-                confusionAnalysis={confusionAnalysis}
-                summary={summary}
-                loading={aiLoading}
-                error={aiError}
-                mode={mode}
-                onExplain={handleExplain}
-                onDetectConfusion={handleDetectConfusion}
-                onSummary={handleSummary}
-                hasFile={hasFile}
-                hasProject={hasProject}
-              />
-            </>
-          ) : (
-            <ChatPanel hasProject={hasProject} model={model} />
-          )}
+          <div className={activePanel === 'explain' ? 'flex h-full flex-col overflow-hidden' : 'hidden'}>
+            <ModeSelector mode={mode} onChange={setMode} />
+            <ExplanationPanel
+              explanation={explanation}
+              confusionAnalysis={confusionAnalysis}
+              summary={summary}
+              loading={aiLoading}
+              error={aiError}
+              mode={mode}
+              onExplain={handleExplain}
+              onDetectConfusion={handleDetectConfusion}
+              onSummary={handleSummary}
+              onStop={stopStream}
+              hasFile={hasFile}
+              hasProject={hasProject}
+            />
+          </div>
+          <div className={activePanel === 'chat' ? 'flex h-full flex-col overflow-hidden' : 'hidden'}>
+            {/* Keyed by project so loading a new project starts a fresh chat */}
+            <ChatPanel key={projectRoot} hasProject={hasProject} model={model} />
+          </div>
         </aside>
       </div>
     </div>
   )
+}
+
+/** Extract a readable message from an Axios / fetch error. */
+function formatError(err) {
+  const data = err.response?.data
+  if (typeof data?.detail === 'string') return data.detail
+  if (Array.isArray(data?.details)) return data.details.map(d => d.message).join('; ')
+  return err.message
 }

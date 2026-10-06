@@ -2,20 +2,51 @@
  * CodeViewer – displays the content of the selected file with
  * syntax highlighting via react-syntax-highlighter.
  *
+ * Uses the PrismLight build and registers only the languages DevLens can
+ * open, which keeps the bundle far smaller than the full Prism build.
+ *
  * Props:
  *   fileName – name of the file (used to pick language)
  *   content  – raw text content
  */
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
+import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
+import bash from 'react-syntax-highlighter/dist/esm/languages/prism/bash'
+import batch from 'react-syntax-highlighter/dist/esm/languages/prism/batch'
+import c from 'react-syntax-highlighter/dist/esm/languages/prism/c'
+import cpp from 'react-syntax-highlighter/dist/esm/languages/prism/cpp'
+import css from 'react-syntax-highlighter/dist/esm/languages/prism/css'
+import go from 'react-syntax-highlighter/dist/esm/languages/prism/go'
+import java from 'react-syntax-highlighter/dist/esm/languages/prism/java'
+import javascript from 'react-syntax-highlighter/dist/esm/languages/prism/javascript'
+import json from 'react-syntax-highlighter/dist/esm/languages/prism/json'
+import jsx from 'react-syntax-highlighter/dist/esm/languages/prism/jsx'
+import markdown from 'react-syntax-highlighter/dist/esm/languages/prism/markdown'
+import markup from 'react-syntax-highlighter/dist/esm/languages/prism/markup'
+import php from 'react-syntax-highlighter/dist/esm/languages/prism/php'
+import python from 'react-syntax-highlighter/dist/esm/languages/prism/python'
+import ruby from 'react-syntax-highlighter/dist/esm/languages/prism/ruby'
+import rust from 'react-syntax-highlighter/dist/esm/languages/prism/rust'
+import toml from 'react-syntax-highlighter/dist/esm/languages/prism/toml'
+import tsx from 'react-syntax-highlighter/dist/esm/languages/prism/tsx'
+import typescript from 'react-syntax-highlighter/dist/esm/languages/prism/typescript'
+import yaml from 'react-syntax-highlighter/dist/esm/languages/prism/yaml'
 import Icon from './icons'
 
-// Map common extensions to Prism language identifiers
+const LANGUAGES = {
+  bash, batch, c, cpp, css, go, java, javascript, json, jsx,
+  markdown, markup, php, python, ruby, rust, toml, tsx, typescript, yaml,
+}
+for (const [name, lang] of Object.entries(LANGUAGES)) {
+  SyntaxHighlighter.registerLanguage(name, lang)
+}
+
+// Map common extensions to the Prism language identifiers registered above
 const EXT_LANG = {
   js: 'javascript', jsx: 'jsx', ts: 'typescript', tsx: 'tsx',
   py: 'python', java: 'java', cpp: 'cpp', c: 'c', h: 'c',
-  html: 'html', css: 'css', json: 'json', md: 'markdown',
-  yaml: 'yaml', yml: 'yaml', toml: 'toml', sh: 'bash',
+  html: 'markup', css: 'css', json: 'json', md: 'markdown',
+  yaml: 'yaml', yml: 'yaml', toml: 'toml', sh: 'bash', bat: 'batch',
   go: 'go', rb: 'ruby', rs: 'rust', php: 'php',
 }
 

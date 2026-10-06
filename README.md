@@ -13,8 +13,10 @@
 | Code Viewer | Syntax-highlighted file viewer with all major languages |
 | AI Explanation | Four modes: Explain · ELI5 · Code Review · Optimization |
 | Project Summary | High-level codebase architecture overview |
-| Codebase Chat | RAG-powered Q&A (e.g. "Where is authentication handled?") |
+| Codebase Chat | RAG-powered Q&A (e.g. "Where is authentication handled?") with source files |
 | Confusion Detector | Highlights complex sections and simplifies them |
+| Live Streaming | Answers render token-by-token; any response can be stopped mid-way |
+| Model Picker | Switch between any model installed in Ollama |
 
 ---
 
@@ -44,7 +46,9 @@ The application is split into two independent services:
 devlens-ai/
 ├── backend/
 │   ├── main.py                 # FastAPI app entry point
-│   ├── requirements.txt
+│   ├── requirements.txt        # runtime dependencies
+│   ├── requirements-dev.txt    # + pytest, ruff
+│   ├── pyproject.toml          # pytest and ruff configuration
 │   ├── routes/
 │   │   ├── upload.py           # POST /upload
 │   │   ├── tree.py             # GET  /tree
@@ -57,8 +61,9 @@ devlens-ai/
 │   │   ├── file_parser.py      # Recursive folder scan → JSON tree + flat list
 │   │   ├── llm_service.py      # Ollama HTTP integration + prompt templates
 │   │   └── rag_service.py      # FAISS index, chunking, retrieval
-│   └── utils/
-│       └── file_utils.py       # Allowed extensions, size limits, safe reads
+│   ├── utils/
+│   │   └── file_utils.py       # Allowed extensions, size limits, safe reads
+│   └── tests/                  # pytest suite (Ollama is mocked)
 └── frontend/
     ├── index.html
     ├── package.json
@@ -75,6 +80,7 @@ devlens-ai/
         │   ├── ModelSelector.jsx
         │   ├── ExplanationPanel.jsx
         │   ├── ChatPanel.jsx
+        │   ├── FormattedText.jsx # Markdown renderer for AI answers
         │   ├── LoadingSpinner.jsx
         │   └── icons.jsx        # Shared SVG icon set
         ├── services/
@@ -114,8 +120,13 @@ source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
 # Start the FastAPI server
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
+uvicorn main:app --reload --host 127.0.0.1 --port 8000
+
+# ...or load settings from a .env file (see Configuration)
+uvicorn main:app --reload --host 127.0.0.1 --port 8000 --env-file ../.env
 ```
+
+The server only needs to listen on `127.0.0.1`: the browser reaches it through the Vite proxy, and binding to `0.0.0.0` would expose your file system to the network.
 
 ### 3. Set up the frontend
 
@@ -129,12 +140,18 @@ Open **http://localhost:5173** in your browser.
 
 ### 4. Configuration
 
-The backend reads the following environment variables (with sensible defaults):
+The backend reads the following environment variables (with sensible defaults). Export them in your shell, or copy `.env.example` to `.env` and start uvicorn with `--env-file ../.env`.
 
 | Variable | Default | Description |
 |---|---|---|
 | `OLLAMA_URL` | `http://localhost:11434` | Base URL of the Ollama server |
 | `OLLAMA_MODEL` | `mistral` | Default model used when none is selected |
+
+The frontend dev server reads one optional variable:
+
+| Variable | Default | Description |
+|---|---|---|
+| `DEVLENS_API_URL` | `http://localhost:8000` | Backend URL the Vite proxy forwards API calls to |
 
 The model dropdown in the app header is populated automatically from the models installed in Ollama. You can switch the active model at any time; your selection is applied to explanations, reviews, project summaries, and chat.
 
@@ -146,7 +163,8 @@ The model dropdown in the app header is populated automatically from the models 
 4. Choose an explanation **mode** (Explain / ELI5 / Review / Optimize).
 5. Click **Explain File** to generate an AI explanation.
 6. Click **Project Summary** to analyse the whole codebase.
-7. Switch to the **Chat** tab and ask natural-language questions.
+7. Switch to the **Chat** tab and ask natural-language questions. Each answer lists the source files it drew on.
+8. Click **Stop** at any time to cancel a response; the text received so far is kept. Finished results can be copied with **Copy**.
 
 ### Performance Notes
 
@@ -155,6 +173,24 @@ The model dropdown in the app header is populated automatically from the models 
 - **RAG pre-warming** — the FAISS index is built in the background right after upload, so the first chat query uses a warm cache.
 - **Non-blocking I/O** — disk reads use `aiofiles`, and CPU-heavy work (scanning, embedding, FAISS search) runs off the event loop.
 - **Connection reuse** — a single HTTP client keeps the connection to Ollama open across requests.
+
+---
+
+## Development
+
+```bash
+# Backend: lint and tests (Ollama and the embedding model are mocked)
+cd backend
+pip install -r requirements-dev.txt
+ruff check .
+python -m pytest
+
+# Frontend: production build (served by `npm run preview`)
+cd frontend
+npm run build
+```
+
+GitHub Actions runs the same checks on every push and pull request to `main`.
 
 ---
 

@@ -50,6 +50,8 @@ const EXT_LANG = {
   go: 'go', rb: 'ruby', rs: 'rust', php: 'php',
 }
 
+const CODE_STYLE = { ...oneDark['code[class*="language-"]'], background: 'transparent' }
+
 function getLang(fileName) {
   if (!fileName) return 'text'
   const ext = fileName.split('.').pop().toLowerCase()
@@ -90,6 +92,9 @@ export default function CodeViewer({ fileName, content }) {
             fontSize: '0.82rem',
             minHeight: '100%',
           }}
+          // oneDark gives the inline <code> its own background, which paints
+          // a box behind every line fragment – let the <pre> background show
+          codeTagProps={{ style: CODE_STYLE }}
         >
           {content}
         </SyntaxHighlighter>

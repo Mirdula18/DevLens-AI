@@ -9,7 +9,7 @@
 | Feature | Description |
 |---|---|
 | Project Upload | Point to any local folder; the backend scans it recursively |
-| File Tree | VS Code-style expandable file explorer |
+| File Tree | VS Code-style expandable file explorer with a quick file filter |
 | Code Viewer | Syntax-highlighted file viewer with all major languages |
 | AI Explanation | Four modes: Explain · ELI5 · Code Review · Optimization |
 | Project Summary | High-level codebase architecture overview |
@@ -17,6 +17,8 @@
 | Confusion Detector | Highlights complex sections and simplifies them |
 | Live Streaming | Answers render token-by-token; any response can be stopped mid-way |
 | Model Picker | Switch between any model installed in Ollama |
+| Status Badge | Shows whether the backend and Ollama are reachable, and recovers automatically |
+| Remembered Settings | The last project path and model are restored on reload (stored in the browser only) |
 
 ---
 
@@ -82,9 +84,13 @@ devlens-ai/
         │   ├── ChatPanel.jsx
         │   ├── FormattedText.jsx # Markdown renderer for AI answers
         │   ├── LoadingSpinner.jsx
+        │   ├── StatusIndicator.jsx # Backend / Ollama health badge
         │   └── icons.jsx        # Shared SVG icon set
         ├── services/
-        │   └── api.js
+        │   └── api.js           # REST + SSE client
+        ├── utils/
+        │   ├── storage.js       # localStorage preferences
+        │   └── tree.js          # File-tree filtering
         └── styles/
             └── index.css
 ```
@@ -159,7 +165,7 @@ The model dropdown in the app header is populated automatically from the models 
 
 1. Enter the **absolute path** to any local project folder in the sidebar.
 2. Click **Load Project** — the file tree appears in the sidebar.
-3. Click any file to view its source code.
+3. Click any file to view its source code. Type in **Filter files** to narrow the tree (Esc clears it).
 4. Choose an explanation **mode** (Explain / ELI5 / Review / Optimize).
 5. Click **Explain File** to generate an AI explanation.
 6. Click **Project Summary** to analyse the whole codebase.
@@ -185,8 +191,9 @@ pip install -r requirements-dev.txt
 ruff check .
 python -m pytest
 
-# Frontend: production build (served by `npm run preview`)
+# Frontend: unit tests (Vitest) and production build (served by `npm run preview`)
 cd frontend
+npm test
 npm run build
 ```
 

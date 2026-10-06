@@ -9,13 +9,14 @@
  *
  * The header tabs switch the right panel between Explain and Chat.
  */
-import { useState, useEffect, useRef } from 'react'
+import { useCallback, useState, useEffect, useRef } from 'react'
 import Sidebar from './components/Sidebar'
 import CodeViewer from './components/CodeViewer'
 import ExplanationPanel from './components/ExplanationPanel'
 import ChatPanel from './components/ChatPanel'
 import ModeSelector from './components/ModeSelector'
 import ModelSelector from './components/ModelSelector'
+import StatusIndicator from './components/StatusIndicator'
 import Icon from './components/icons'
 
 import {
@@ -27,6 +28,7 @@ import {
   streamConfusion,
   streamSummary,
 } from './services/api'
+import { loadPref, savePref } from './utils/storage'
 
 export default function App() {
   // Project state
@@ -42,8 +44,8 @@ export default function App() {
 
   // Explanation / model state
   const [mode, setMode] = useState('normal')
-  const [availableModels, setAvailableModels] = useState(['mistral'])
-  const [model, setModel] = useState('mistral')
+  const [model, setModel] = useState(() => loadPref('model', 'mistral'))
+  const [availableModels, setAvailableModels] = useState(() => [model])
   const [explanation, setExplanation] = useState('')
   const [confusionAnalysis, setConfusionAnalysis] = useState('')
   const [summary, setSummary] = useState('')
@@ -58,25 +60,32 @@ export default function App() {
 
   // ── Handlers ────────────────────────────────────────────────────────────────
 
-  // Load the available models from Ollama on startup
-  useEffect(() => {
-    let active = true
-    ;(async () => {
-      try {
-        const data = await fetchModels()
-        if (!active) return
-        if (data.models?.length) {
-          setAvailableModels(data.models)
-          setModel(data.models.includes(data.default) ? data.default : data.models[0])
-        }
-      } catch {
-        // Ollama unavailable – keep the fallback default
-      }
-    })()
-    return () => {
-      active = false
+  // Load the models installed in Ollama, keeping the remembered choice
+  // when it is still available, else the server default, else the first.
+  const loadModels = useCallback(async () => {
+    try {
+      const data = await fetchModels()
+      if (!data.models?.length) return
+      setAvailableModels(data.models)
+      setModel(current => {
+        const saved = loadPref('model')
+        if (data.models.includes(saved)) return saved
+        if (data.models.includes(current)) return current
+        return data.models.includes(data.default) ? data.default : data.models[0]
+      })
+    } catch {
+      // Ollama unavailable – keep the fallback default
     }
   }, [])
+
+  useEffect(() => {
+    loadModels()
+  }, [loadModels])
+
+  function handleModelChange(next) {
+    setModel(next)
+    savePref('model', next)
+  }
 
   // Cancel any running stream when the app unmounts
   useEffect(() => () => streamRef.current?.abort(), [])
@@ -137,6 +146,7 @@ export default function App() {
     try {
       const uploadResult = await uploadProject(path)
       const treeResult = await fetchTree()
+      savePref('projectPath', path)
       setProjectRoot(uploadResult.path ?? path)
       setTree(treeResult.tree ?? [])
       setUploadStatus({ loading: false, error: null, projectName: uploadResult.root })
@@ -205,10 +215,11 @@ export default function App() {
         </div>
         {/* Panel toggle */}
         <div className="flex items-center gap-3">
+          <StatusIndicator onRecover={loadModels} />
           <ModelSelector
             models={availableModels}
             value={model}
-            onChange={setModel}
+            onChange={handleModelChange}
           />
           <div className="flex gap-1">
             {[
@@ -241,6 +252,7 @@ export default function App() {
           onFileClick={handleFileClick}
           onUpload={handleUpload}
           uploadStatus={uploadStatus}
+          initialPath={loadPref('projectPath')}
         />
 
         {/* Code viewer */}

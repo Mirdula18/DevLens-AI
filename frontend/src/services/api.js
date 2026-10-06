@@ -36,6 +36,12 @@ export async function fetchModels() {
   return data
 }
 
+/** Check backend liveness and whether Ollama is reachable. */
+export async function fetchHealth() {
+  const { data } = await api.get('/health', { timeout: 5000 })
+  return data
+}
+
 /** True if *err* comes from an AbortController cancelling the request. */
 export function isAbort(err) {
   return err?.name === 'AbortError'

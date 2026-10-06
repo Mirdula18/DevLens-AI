@@ -32,7 +32,7 @@ jobs:
         run: python -m pytest
 
   frontend:
-    name: Frontend (build)
+    name: Frontend (tests + build)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -48,6 +48,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Run tests
+        run: npm test
 
       - name: Build
         run: npm run build

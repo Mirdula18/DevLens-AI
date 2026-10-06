@@ -5,7 +5,8 @@
  *   nodes        – array of tree nodes from the backend
  *   onFileClick  – callback(relativePath: string) when a file node is clicked
  *   selectedPath – currently selected file path (for highlight)
- *   depth        – indent depth (internal recursion, starts at 0)
+ *   forceOpen    – expand every folder (used while a search filter is active)
+ *   emptyMessage – text shown when there are no nodes
  */
 import { useState } from 'react'
 import Icon from './icons'
@@ -33,8 +34,9 @@ function fileColour(name) {
   return EXT_COLOURS[ext] ?? EXT_COLOURS.default
 }
 
-function TreeNode({ node, onFileClick, selectedPath, depth }) {
-  const [open, setOpen] = useState(depth === 0)
+function TreeNode({ node, onFileClick, selectedPath, depth, forceOpen }) {
+  const [userOpen, setUserOpen] = useState(depth === 0)
+  const open = forceOpen || userOpen
   const indent = depth * 12
 
   if (node.type === 'folder') {
@@ -43,7 +45,7 @@ function TreeNode({ node, onFileClick, selectedPath, depth }) {
         <button
           className="flex w-full items-center gap-1 rounded-md px-2 py-1 text-left text-sm text-gray-300 transition-colors hover:bg-surface-700 hover:text-white"
           style={{ paddingLeft: `${indent + 8}px` }}
-          onClick={() => setOpen(o => !o)}
+          onClick={() => setUserOpen(!open)}
         >
           <Icon.Chevron
             className={`h-3 w-3 flex-shrink-0 text-gray-500 transition-transform duration-150 ${
@@ -60,6 +62,7 @@ function TreeNode({ node, onFileClick, selectedPath, depth }) {
             onFileClick={onFileClick}
             selectedPath={selectedPath}
             depth={depth + 1}
+            forceOpen={forceOpen}
           />
         ))}
       </div>
@@ -83,12 +86,12 @@ function TreeNode({ node, onFileClick, selectedPath, depth }) {
   )
 }
 
-export default function FileTree({ nodes, onFileClick, selectedPath }) {
+export default function FileTree({ nodes, onFileClick, selectedPath, forceOpen = false, emptyMessage = 'No files found.' }) {
   if (!nodes || nodes.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center gap-2 px-4 py-10 text-gray-500">
         <Icon.File className="h-6 w-6 text-gray-600" />
-        <p className="text-xs">No files found.</p>
+        <p className="text-xs">{emptyMessage}</p>
       </div>
     )
   }
@@ -102,6 +105,7 @@ export default function FileTree({ nodes, onFileClick, selectedPath }) {
           onFileClick={onFileClick}
           selectedPath={selectedPath}
           depth={0}
+          forceOpen={forceOpen}
         />
       ))}
     </div>

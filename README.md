@@ -1,6 +1,19 @@
 # DevLens AI
 
-**DevLens AI** is an offline, AI-powered codebase explainer that runs entirely on your machine. Load any local project folder and get instant AI explanations, code reviews, optimization suggestions, and codebase Q&A — all powered by a local LLM (Ollama). No code ever leaves your computer.
+**An offline, AI-powered codebase explainer.** Point DevLens at any local project and get streaming explanations, code reviews, a project summary, codebase statistics, and a multi-turn chat that answers questions about your code with clickable, line-level citations. Everything runs on your machine against a local LLM ([Ollama](https://ollama.com)), so no code ever leaves your computer.
+
+![CI](https://github.com/Mirdula18/DevLens-AI/actions/workflows/ci.yml/badge.svg)
+
+---
+
+## Highlights
+
+- **Retrieval-Augmented Generation over your code.** Files are split into line-aware chunks, embedded with `sentence-transformers`, and searched with FAISS. Answers cite exact ranges such as `routes/file.py:L1-49`; clicking a citation opens the file with those lines highlighted.
+- **Conversational follow-ups.** Chat keeps recent turns as memory, and retrieval combines the previous question with the follow-up, so "what status code does it return?" still finds the right code.
+- **Token-by-token streaming.** Every LLM endpoint streams over Server-Sent Events, end to end through FastAPI, the Vite proxy, or nginx. Responses can be stopped mid-way and stale streams are cancelled automatically.
+- **Codebase insights.** Language breakdown, line counts, project size, and the largest files, computed from the same allowlisted files the explorer shows.
+- **Fully local and containerised.** One `docker compose up` runs the app; the embedding model is baked into the image so retrieval works offline.
+- **Tested and linted in CI.** 46 backend tests (pytest, Ollama mocked) and 21 frontend tests (Vitest), plus `ruff` and a production build on every push.
 
 ---
 
@@ -8,133 +21,105 @@
 
 | Feature | Description |
 |---|---|
-| Project Upload | Point to any local folder; the backend scans it recursively |
-| File Tree | VS Code-style expandable file explorer with a quick file filter |
-| Code Viewer | Syntax-highlighted file viewer with all major languages |
-| AI Explanation | Four modes: Explain · ELI5 · Code Review · Optimization |
-| Project Summary | High-level codebase architecture overview |
-| Codebase Chat | RAG-powered Q&A (e.g. "Where is authentication handled?") with source files |
-| Confusion Detector | Highlights complex sections and simplifies them |
-| Live Streaming | Answers render token-by-token; any response can be stopped mid-way |
-| Model Picker | Switch between any model installed in Ollama |
-| Status Badge | Shows whether the backend and Ollama are reachable, and recovers automatically |
-| Remembered Settings | The last project path and model are restored on reload (stored in the browser only) |
-
----
-
-## Tech Stack
-
-| Layer | Technology |
-|---|---|
-| Frontend | React 18, Vite, Tailwind CSS, Axios |
-| Backend | Python, FastAPI, Uvicorn |
-| AI | Ollama (Mistral, Llama, Gemma, and others) |
-| RAG | FAISS, sentence-transformers |
+| Project explorer | Load any folder by path; VS Code-style tree with a quick file filter |
+| Code viewer | Syntax highlighting for 20+ languages, line-range highlighting |
+| AI explanations | Four modes: Explain, ELI5, Code Review, Optimization |
+| Confusion detector | Finds the most complex sections of a file and simplifies them |
+| Project summary | Architecture overview built from a snapshot of the whole codebase |
+| Codebase chat | Multi-turn RAG Q&A with clickable `file:Lstart-end` citations |
+| Insights | Files, lines, size, lines per language, largest files |
+| Export | Download any explanation, summary, or chat transcript as Markdown |
+| Model picker | Switch between any model installed in Ollama |
+| Status badge | Shows whether the backend and Ollama are reachable; recovers automatically |
+| Remembered settings | Last project path and model restored on reload (browser-only storage) |
 
 ---
 
 ## Architecture
 
-The application is split into two independent services:
+```mermaid
+flowchart LR
+    subgraph Browser
+        UI["React UI<br/>explorer · viewer · explain · chat · insights"]
+    end
 
-- **Backend** (`FastAPI`) — accepts a project path, builds a file tree, reads file contents, and proxies requests to the local Ollama model. It includes a Retrieval-Augmented Generation (RAG) pipeline that indexes the codebase with FAISS and answers natural-language questions.
-- **Frontend** (`React + Vite`) — a dark, split-pane UI with a file explorer, code viewer, AI explanation panel, and a chat tab. The Vite dev server proxies API calls to the backend.
+    subgraph Backend["FastAPI backend"]
+        Routes["Routes<br/>/upload /tree /file /stats<br/>/explain /summary /chat"]
+        Parser["file_parser<br/>scan + allowlist"]
+        RAG["rag_service<br/>line-aware chunks<br/>FAISS index"]
+        LLM["llm_service<br/>prompts + streaming"]
+        Stats["stats_service"]
+    end
+
+    FS[("Local project<br/>files")]
+    Ollama["Ollama<br/>local LLM"]
+
+    UI -- "REST + SSE" --> Routes
+    Routes --> Parser --> FS
+    Routes --> Stats --> FS
+    Routes --> RAG --> FS
+    Routes --> LLM -- "HTTP stream" --> Ollama
+```
+
+In development the Vite dev server proxies API calls to the backend; in Docker, nginx serves the built UI and proxies the API with buffering disabled so SSE tokens arrive immediately.
+
+### How codebase chat works
+
+1. **Index (on upload, in the background).** Every allowlisted file is split into chunks of whole lines (up to ~1,500 characters, 3 lines of overlap). Each chunk records its `start_line` and `end_line`. Chunks are embedded with `all-MiniLM-L6-v2` and stored in an in-memory FAISS index, cached per project.
+2. **Retrieve.** The question, plus the previous question when the user is following up, is embedded and the top-k nearest chunks are fetched. Embedding and search run in a worker thread to keep the event loop free.
+3. **Generate.** Retrieved chunks are formatted with their file and line range, combined with recent conversation turns, and streamed to the model with instructions to answer only from the context and cite line ranges.
+4. **Cite.** After the answer, the backend sends de-duplicated citations (`path`, `start_line`, `end_line`), which the UI renders as clickable chips.
 
 ---
 
-## Folder Structure
+## Quick start with Docker
 
-```
-devlens-ai/
-├── backend/
-│   ├── main.py                 # FastAPI app entry point
-│   ├── requirements.txt        # runtime dependencies
-│   ├── requirements-dev.txt    # + pytest, ruff
-│   ├── pyproject.toml          # pytest and ruff configuration
-│   ├── routes/
-│   │   ├── upload.py           # POST /upload
-│   │   ├── tree.py             # GET  /tree
-│   │   ├── file.py             # GET  /file
-│   │   ├── explain.py          # POST /explain and /explain/confusion
-│   │   ├── summary.py          # POST /summary
-│   │   ├── chat.py             # POST /chat (RAG Q&A)
-│   │   └── models.py           # GET  /models
-│   ├── services/
-│   │   ├── file_parser.py      # Recursive folder scan → JSON tree + flat list
-│   │   ├── llm_service.py      # Ollama HTTP integration + prompt templates
-│   │   └── rag_service.py      # FAISS index, chunking, retrieval
-│   ├── utils/
-│   │   └── file_utils.py       # Allowed extensions, size limits, safe reads
-│   └── tests/                  # pytest suite (Ollama is mocked)
-└── frontend/
-    ├── index.html
-    ├── package.json
-    ├── vite.config.js           # Dev proxy to the backend
-    ├── tailwind.config.js
-    └── src/
-        ├── App.jsx
-        ├── main.jsx
-        ├── components/
-        │   ├── Sidebar.jsx
-        │   ├── FileTree.jsx
-        │   ├── CodeViewer.jsx
-        │   ├── ModeSelector.jsx
-        │   ├── ModelSelector.jsx
-        │   ├── ExplanationPanel.jsx
-        │   ├── ChatPanel.jsx
-        │   ├── FormattedText.jsx # Markdown renderer for AI answers
-        │   ├── LoadingSpinner.jsx
-        │   ├── StatusIndicator.jsx # Backend / Ollama health badge
-        │   └── icons.jsx        # Shared SVG icon set
-        ├── services/
-        │   └── api.js           # REST + SSE client
-        ├── utils/
-        │   ├── storage.js       # localStorage preferences
-        │   └── tree.js          # File-tree filtering
-        └── styles/
-            └── index.css
-```
-
----
-
-## Setup Instructions
-
-### 1. Install Ollama and pull a model
-
-DevLens AI uses [Ollama](https://ollama.com) to run a model locally.
+Requires Docker and [Ollama](https://ollama.com) on the host.
 
 ```bash
-# Install Ollama (https://ollama.com)
-curl -fsSL https://ollama.com/install.sh | sh
+ollama pull mistral          # or any model you prefer
 
-# Pull a model (Mistral recommended, ~4 GB; Llama 3 and Gemma also work)
-ollama pull mistral
-
-# Start the Ollama server (listens on port 11434 by default)
-ollama serve
+# Mount the folder that contains your projects (read-only)
+PROJECTS_DIR=/path/to/your/code docker compose up --build
 ```
 
-### 2. Set up the backend
+Open **http://localhost:8080** and load a project by its path inside the container, for example `/projects/my-app`.
+
+| Variable | Default | Description |
+|---|---|---|
+| `PROJECTS_DIR` | `.` | Host folder mounted read-only at `/projects` |
+| `OLLAMA_URL` | `http://host.docker.internal:11434` | Ollama server reachable from the container |
+| `OLLAMA_MODEL` | `mistral` | Default model |
+| `DEVLENS_PORT` | `8080` | Port the UI is published on (bound to `127.0.0.1` only) |
+
+---
+
+## Manual setup
+
+### 1. Ollama
+
+```bash
+curl -fsSL https://ollama.com/install.sh | sh   # see ollama.com for Windows/macOS
+ollama pull mistral
+ollama serve                                    # listens on port 11434
+```
+
+### 2. Backend
 
 ```bash
 cd backend
-
-# (optional) create a virtual environment
 python -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
-
 pip install -r requirements.txt
 
-# Start the FastAPI server
 uvicorn main:app --reload --host 127.0.0.1 --port 8000
-
-# ...or load settings from a .env file (see Configuration)
+# ...or load settings from a .env file:
 uvicorn main:app --reload --host 127.0.0.1 --port 8000 --env-file ../.env
 ```
 
-The server only needs to listen on `127.0.0.1`: the browser reaches it through the Vite proxy, and binding to `0.0.0.0` would expose your file system to the network.
+Keep the server on `127.0.0.1`: the browser reaches it through the Vite proxy, and binding to `0.0.0.0` would expose your file system to the network.
 
-### 3. Set up the frontend
+### 3. Frontend
 
 ```bash
 cd frontend
@@ -142,43 +127,39 @@ npm install
 npm run dev
 ```
 
-Open **http://localhost:5173** in your browser.
+Open **http://localhost:5173**.
 
-### 4. Configuration
+### Configuration
 
-The backend reads the following environment variables (with sensible defaults). Export them in your shell, or copy `.env.example` to `.env` and start uvicorn with `--env-file ../.env`.
+| Variable | Default | Used by | Description |
+|---|---|---|---|
+| `OLLAMA_URL` | `http://localhost:11434` | backend | Base URL of the Ollama server |
+| `OLLAMA_MODEL` | `mistral` | backend | Default model when none is selected |
+| `DEVLENS_API_URL` | `http://localhost:8000` | Vite dev server | Backend the dev proxy forwards to |
 
-| Variable | Default | Description |
-|---|---|---|
-| `OLLAMA_URL` | `http://localhost:11434` | Base URL of the Ollama server |
-| `OLLAMA_MODEL` | `mistral` | Default model used when none is selected |
+Copy `.env.example` to `.env` to keep backend settings in a file.
 
-The frontend dev server reads one optional variable:
+---
 
-| Variable | Default | Description |
-|---|---|---|
-| `DEVLENS_API_URL` | `http://localhost:8000` | Backend URL the Vite proxy forwards API calls to |
+## Using DevLens
 
-The model dropdown in the app header is populated automatically from the models installed in Ollama. You can switch the active model at any time; your selection is applied to explanations, reviews, project summaries, and chat.
+1. Enter the **absolute path** of a project and click **Load Project**.
+2. Click a file to view it; type in **Filter files** to narrow the tree (Esc clears it).
+3. Pick a mode (Explain / ELI5 / Review / Optimize) and click **Explain File**, or **Detect Confusion**.
+4. Click **Project Summary** for an architecture overview of the whole codebase.
+5. Open **Chat** and ask questions; ask follow-ups naturally. Click a citation to jump to the cited lines.
+6. Open **Insights** for language and size statistics; click a large file to open it.
+7. **Stop** cancels any response (text so far is kept); **Copy** and **Export** save results.
 
-### 5. Use DevLens AI
+---
 
-1. Enter the **absolute path** to any local project folder in the sidebar.
-2. Click **Load Project** — the file tree appears in the sidebar.
-3. Click any file to view its source code. Type in **Filter files** to narrow the tree (Esc clears it).
-4. Choose an explanation **mode** (Explain / ELI5 / Review / Optimize).
-5. Click **Explain File** to generate an AI explanation.
-6. Click **Project Summary** to analyse the whole codebase.
-7. Switch to the **Chat** tab and ask natural-language questions. Each answer lists the source files it drew on.
-8. Click **Stop** at any time to cancel a response; the text received so far is kept. Finished results can be copied with **Copy**.
+## Engineering notes
 
-### Performance Notes
-
-- **Streaming responses** — LLM answers stream token-by-token via SSE, so text appears progressively instead of after a long wait.
-- **Tree caching** — the file tree is parsed once at upload and served from memory on subsequent requests.
-- **RAG pre-warming** — the FAISS index is built in the background right after upload, so the first chat query uses a warm cache.
-- **Non-blocking I/O** — disk reads use `aiofiles`, and CPU-heavy work (scanning, embedding, FAISS search) runs off the event loop.
-- **Connection reuse** — a single HTTP client keeps the connection to Ollama open across requests.
+- **Streaming end to end.** `llm_service` reads Ollama's newline-delimited JSON stream and yields tokens; routes wrap them as SSE events (`token`, `sources`, `error`, `done`). The frontend parses SSE from a `fetch` stream (handling events split across network chunks) and supports cancellation via `AbortController`.
+- **Non-blocking backend.** File reads use `aiofiles`; directory scans, embedding and FAISS search run in worker threads; one pooled HTTP client is reused for Ollama and closed on shutdown.
+- **Warm caches.** The parsed tree is cached at upload, and the RAG index is pre-built in a retained background task so the first chat query is fast. A lock prevents concurrent duplicate index builds.
+- **Prompt budgets.** Code sent for explanation is capped at 50,000 characters, RAG context at 30,000, and chat memory at 6 turns of 2,000 characters each.
+- **Small bundle.** The code viewer uses `PrismLight` with only the languages DevLens opens, cutting the JavaScript bundle from 846 KB to about 340 KB.
 
 ---
 
@@ -191,46 +172,75 @@ pip install -r requirements-dev.txt
 ruff check .
 python -m pytest
 
-# Frontend: unit tests (Vitest) and production build (served by `npm run preview`)
+# Frontend: unit tests and production build
 cd frontend
 npm test
 npm run build
 ```
 
-GitHub Actions runs the same checks on every push and pull request to `main`.
+GitHub Actions runs these checks on every push and pull request to `main`.
 
 ---
 
-## API Reference
+## API reference
 
-LLM-backed endpoints (`/explain`, `/explain/confusion`, `/summary`, `/chat`) return **Server-Sent Events** (`text/event-stream`) so responses stream token-by-token.
+LLM-backed endpoints return **Server-Sent Events** (`text/event-stream`).
 
-SSE event types:
-
-| Type | Payload | Meaning |
+| Event type | Payload | Meaning |
 |---|---|---|
-| `token` | string | one generated token |
-| `sources` | string[] | source files (chat only) |
-| `error` | string | an error occurred |
-| `done` | — | the stream finished |
+| `token` | string | One generated token |
+| `sources` | `{ path, start_line, end_line }[]` | Citations (chat only) |
+| `error` | string | An error occurred |
+| `done` | — | The stream finished |
 
 | Method | Endpoint | Description |
 |---|---|---|
-| POST | `/upload` | Register a project folder `{ "path": "/abs/path" }` |
-| GET | `/tree` | Get the file-tree JSON |
-| GET | `/file?path=<rel>` | Get a file's content |
-| POST | `/explain` | Explain code `{ "code", "mode", "model" }` (streamed) |
-| POST | `/explain/confusion` | Detect confusing sections `{ "code" }` (streamed) |
-| POST | `/summary` | Generate a project summary `{ "model" }` (streamed) |
-| POST | `/chat` | RAG Q&A `{ "question", "top_k", "model" }` (streamed) |
-| GET | `/models` | List installed models and the default |
-| GET | `/health` | Liveness probe |
+| POST | `/upload` | Register a project `{ "path": "/abs/path" }` |
+| GET | `/tree` | File-tree JSON |
+| GET | `/file?path=<rel>` | A file's content |
+| GET | `/stats` | Files, lines, size, languages, largest files |
+| POST | `/explain` | Explain code `{ code, mode, model }` (streamed) |
+| POST | `/explain/confusion` | Confusing sections `{ code, model }` (streamed) |
+| POST | `/summary` | Project summary `{ model }` (streamed) |
+| POST | `/chat` | RAG Q&A `{ question, top_k, model, history }` (streamed) |
+| GET | `/models` | Installed models and the default |
+| GET | `/health` | Backend liveness and Ollama reachability |
+
+`history` is a list of earlier `{ "role": "user" | "assistant", "content": "..." }` turns.
 
 ---
 
-## Security & Constraints
+## Security
 
-- Files are filtered by an allowlist of source-code extensions and a 100 KB size limit.
-- The `/file` endpoint resolves paths safely and rejects path-traversal attempts (HTTP 403).
-- Code sent to the model is capped to 50,000 characters; RAG context is capped at 30,000 characters to stay within prompt budgets.
-- The model selection and all AI features run against your local Ollama instance; no code is transmitted over the network.
+- Only allowlisted source-file types up to 100 KB are read; dependency, build, and cache folders are skipped.
+- `/file` resolves paths against the project root and rejects traversal attempts with HTTP 403.
+- The Docker setup mounts projects read-only, runs the backend as an unprivileged user, and publishes the UI on `127.0.0.1` only.
+- All AI features run against your own Ollama instance; no code is sent to external services.
+
+---
+
+## Project structure
+
+```
+DevLens-AI/
+├── docker-compose.yml
+├── backend/
+│   ├── Dockerfile
+│   ├── main.py                  # FastAPI app, routers, validation errors, /health
+│   ├── routes/                  # upload, tree, file, stats, explain, summary, chat, models
+│   ├── services/
+│   │   ├── file_parser.py       # Recursive scan → tree + flat file list
+│   │   ├── rag_service.py       # Line-aware chunking, FAISS index, citations
+│   │   ├── llm_service.py       # Ollama streaming client + prompt templates
+│   │   └── stats_service.py     # Language and size metrics
+│   ├── utils/file_utils.py      # Allowlist, size limits, safe reads
+│   └── tests/                   # pytest suite
+└── frontend/
+    ├── Dockerfile, nginx.conf   # Static build served by nginx with SSE proxy
+    └── src/
+        ├── App.jsx
+        ├── components/          # Sidebar, FileTree, CodeViewer, ExplanationPanel,
+        │                        # ChatPanel, InsightsPanel, FormattedText, StatusIndicator, …
+        ├── services/api.js      # REST + SSE client
+        └── utils/               # tree filter, downloads, preferences
+```

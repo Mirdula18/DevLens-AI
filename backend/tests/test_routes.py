@@ -1,4 +1,4 @@
-﻿"""
+"""
 End-to-end route tests.
 
 These hit the FastAPI app via TestClient. All LLM calls are mocked in
@@ -17,7 +17,7 @@ def _events(stream_resp):
     return events
 
 
-# â”€â”€ Health & models â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── Health & models ──────────────────────────────────────────────────────────
 
 def test_health_ok(client):
     resp = client.get("/health")
@@ -35,7 +35,7 @@ def test_models(client):
     assert data["default"]
 
 
-# â”€â”€ Project upload & tree â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── Project upload & tree ────────────────────────────────────────────────────
 
 def test_upload_and_tree(client, project_dir):
     resp = client.post("/upload", json={"path": project_dir})
@@ -76,7 +76,7 @@ def test_tree_without_project(client):
     assert resp.status_code == 400
 
 
-# â”€â”€ File endpoint & security â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── File endpoint & security ─────────────────────────────────────────────────
 
 def test_file_read(client, project_dir):
     client.post("/upload", json={"path": project_dir})
@@ -103,7 +103,7 @@ def test_file_without_project(client):
     assert resp.status_code == 400
 
 
-# â”€â”€ /explain (streams) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── /explain (streams) ───────────────────────────────────────────────────────
 
 def test_explain_streams(client):
     with client.stream(
@@ -135,7 +135,7 @@ def test_confusion_streams(client):
         assert any(e["type"] == "token" for e in events)
 
 
-# â”€â”€ /summary (streams) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── /summary (streams) ───────────────────────────────────────────────────────
 
 def test_summary_streams(client, project_dir):
     client.post("/upload", json={"path": project_dir})
@@ -150,7 +150,7 @@ def test_summary_without_project(client):
     assert resp.status_code == 400
 
 
-# â”€â”€ /chat (RAG, streams) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── /chat (RAG, streams) ─────────────────────────────────────────────────────
 
 def test_chat_streams_with_sources(client, project_dir, monkeypatch):
     from services import rag_service

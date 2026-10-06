@@ -15,8 +15,11 @@
  *   onStop            – callback() cancel the running stream
  *   hasFile           – bool (a file is currently selected)
  *   hasProject        – bool (a project is loaded)
+ *   fileName          – selected file name (used when exporting)
+ *   projectName       – loaded project name (used when exporting)
  */
 import { useState } from 'react'
+import { downloadMarkdown, slugify } from '../utils/download'
 import FormattedText from './FormattedText'
 import LoadingSpinner from './LoadingSpinner'
 import Icon from './icons'
@@ -59,6 +62,8 @@ export default function ExplanationPanel({
   onStop,
   hasFile,
   hasProject,
+  fileName,
+  projectName,
 }) {
   const hasOutput = Boolean(explanation || confusionAnalysis || summary)
 
@@ -133,27 +138,31 @@ export default function ExplanationPanel({
         )}
 
         {summary && (
-          <ResultSection icon={Icon.Clipboard} title="Project Summary" text={summary} streaming={loading} />
+          <ResultSection icon={Icon.Clipboard} title="Project Summary" subject={projectName} text={summary} streaming={loading} />
         )}
 
         {explanation && (
           <ResultSection
             icon={Icon.Sparkles}
             title={mode === 'normal' ? 'Explanation' : `Explanation · ${MODE_LABELS[mode] ?? mode}`}
+            subject={fileName}
             text={explanation}
             streaming={loading}
           />
         )}
 
         {confusionAnalysis && (
-          <ResultSection icon={Icon.Target} title="Confusion Detector" text={confusionAnalysis} streaming={loading} />
+          <ResultSection icon={Icon.Target} title="Confusion Detector" subject={fileName} text={confusionAnalysis} streaming={loading} />
         )}
       </div>
     </div>
   )
 }
 
-function ResultSection({ icon: TitleIcon, title, text, streaming }) {
+const smallButton =
+  'flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-gray-500 transition-colors hover:bg-surface-700 hover:text-gray-200'
+
+function ResultSection({ icon: TitleIcon, title, subject, text, streaming }) {
   const [copied, setCopied] = useState(false)
 
   async function handleCopy() {
@@ -166,6 +175,14 @@ function ResultSection({ icon: TitleIcon, title, text, streaming }) {
     }
   }
 
+  function handleExport() {
+    const heading = subject ? `# ${title} – ${subject}` : `# ${title}`
+    downloadMarkdown(`devlens-${slugify(title)}-${slugify(subject ?? '')}.md`, `${heading}
+
+${text}
+`)
+  }
+
   return (
     <section>
       <div className="mb-3 flex items-center justify-between gap-2">
@@ -175,14 +192,16 @@ function ResultSection({ icon: TitleIcon, title, text, streaming }) {
           {streaming && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />}
         </h3>
         {!streaming && (
-          <button
-            onClick={handleCopy}
-            title="Copy to clipboard"
-            className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-gray-500 transition-colors hover:bg-surface-700 hover:text-gray-200"
-          >
-            {copied ? <Icon.Check className="h-3 w-3 text-green-400" /> : <Icon.Clipboard className="h-3 w-3" />}
-            <span>{copied ? 'Copied' : 'Copy'}</span>
-          </button>
+          <div className="flex gap-0.5">
+            <button onClick={handleCopy} title="Copy to clipboard" className={smallButton}>
+              {copied ? <Icon.Check className="h-3 w-3 text-green-400" /> : <Icon.Clipboard className="h-3 w-3" />}
+              <span>{copied ? 'Copied' : 'Copy'}</span>
+            </button>
+            <button onClick={handleExport} title="Download as Markdown" className={smallButton}>
+              <Icon.Download className="h-3 w-3" />
+              <span>Export</span>
+            </button>
+          </div>
         )}
       </div>
       <FormattedText text={text} />

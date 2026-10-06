@@ -135,6 +135,27 @@ export const Icon = {
       <path d="M6 6l12 12M18 6 6 18" />
     </Svg>
   ),
+  Download: ({ className }) => (
+    <Svg className={className}>
+      <path d="M12 4v11" />
+      <path d="m7 10 5 5 5-5" />
+      <path d="M5 20h14" />
+    </Svg>
+  ),
+  Chart: ({ className }) => (
+    <Svg className={className}>
+      <path d="M4 20h16" />
+      <path d="M7 16v-5" />
+      <path d="M12 16V7" />
+      <path d="M17 16v-8" />
+    </Svg>
+  ),
+  Refresh: ({ className }) => (
+    <Svg className={className}>
+      <path d="M20 11a8 8 0 1 0-2.3 5.7" />
+      <path d="M20 5v6h-6" />
+    </Svg>
+  ),
 }
 
 export default Icon

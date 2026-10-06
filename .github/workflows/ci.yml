@@ -14,13 +14,14 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
           cache: pip
+          cache-dependency-path: backend/requirements*.txt
 
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
@@ -38,13 +39,15 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - name: Set up Node 20
-        uses: actions/setup-node@v4
+      - name: Set up Node 22
+        uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
+          # The lock file lives in frontend/, not the repo root
+          cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
         run: npm ci

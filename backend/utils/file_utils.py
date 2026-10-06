@@ -17,8 +17,12 @@ ALLOWED_EXTENSIONS: set[str] = {
     ".html", ".css", ".java", ".cpp", ".c",
     ".h", ".go", ".rb", ".rs", ".php",
     ".json", ".yaml", ".yml", ".toml", ".md",
-    ".sh", ".bat", ".env.example",
+    ".sh", ".bat",
 }
+
+# Full file names allowed regardless of extension (their suffix alone
+# would not match, e.g. ".env.example" has the suffix ".example")
+ALLOWED_FILENAMES: set[str] = {".env.example"}
 
 # Directories that should always be skipped
 IGNORED_DIRS: set[str] = {
@@ -32,9 +36,9 @@ MAX_FILE_SIZE: int = 100 * 1024
 
 
 def is_allowed_file(path: str | Path) -> bool:
-    """Return True if the file has an allowed extension and is not too large."""
+    """Return True if the file has an allowed extension/name and is not too large."""
     p = Path(path)
-    if p.suffix.lower() not in ALLOWED_EXTENSIONS:
+    if p.suffix.lower() not in ALLOWED_EXTENSIONS and p.name not in ALLOWED_FILENAMES:
         return False
     try:
         if os.path.getsize(p) > MAX_FILE_SIZE:

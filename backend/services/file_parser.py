@@ -12,7 +12,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from utils.file_utils import ALLOWED_EXTENSIONS, IGNORED_DIRS, is_allowed_file
+from utils.file_utils import IGNORED_DIRS, is_allowed_file
 
 
 def _build_tree(root: Path, base: Path) -> list[dict[str, Any]]:
@@ -48,8 +48,7 @@ def _build_tree(root: Path, base: Path) -> list[dict[str, Any]]:
                 }
             )
         elif entry.is_file(follow_symlinks=False):
-            p = Path(entry.path)
-            if p.suffix.lower() in ALLOWED_EXTENSIONS and is_allowed_file(p):
+            if is_allowed_file(entry.path):
                 nodes.append(
                     {
                         "name": entry.name,

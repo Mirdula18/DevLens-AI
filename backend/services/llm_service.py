@@ -1,8 +1,9 @@
 """
 LLM service – wraps the local Ollama HTTP API.
 
-All prompts are sent to http://localhost:11434/api/generate and the
-response is streamed back and then returned as a single string.
+Prompts are sent to Ollama's /api/generate endpoint (OLLAMA_URL, default
+http://localhost:11434) and the response is streamed back token-by-token,
+so routes can forward each token to the browser over SSE.
 """
 
 import asyncio
@@ -164,24 +165,6 @@ MODE_PROMPTS: dict[str, str] = {
 
 # ── Core LLM call ────────────────────────────────────────────────────────────
 
-async def generate(prompt: str, model: str = DEFAULT_MODEL) -> str:
-    """
-    Send *prompt* to Ollama and return the complete response text.
-
-    Raises httpx.HTTPError on network / server errors.
-    """
-    payload = {
-        "model": model,
-        "prompt": prompt,
-        "stream": False,
-    }
-
-    response = await _get_client().post(OLLAMA_URL, json=payload)
-    response.raise_for_status()
-    data = response.json()
-    return data.get("response", "").strip()
-
-
 async def stream_generate(prompt: str, model: str = DEFAULT_MODEL):
     """
     Stream *prompt* to Ollama and yield each token as it is produced.
@@ -213,7 +196,7 @@ async def stream_generate(prompt: str, model: str = DEFAULT_MODEL):
 # ── Prompt builders ──────────────────────────────────────────────────────────
 
 def make_explain_prompt(code: str, mode: str = "normal") -> str:
-    """Build the prompt for *mode* (used by both the JSON and streaming paths)."""
+    """Build the explanation prompt for *mode* (unknown modes fall back to normal)."""
     template = MODE_PROMPTS.get(mode, _EXPLAIN_NORMAL)
     return template.format(code=code)
 
@@ -256,26 +239,6 @@ async def is_ollama_available() -> bool:
         return response.status_code < 500
     except Exception:  # noqa: BLE001
         return False
-
-
-async def explain_code(code: str, mode: str = "normal", model: str = DEFAULT_MODEL) -> str:
-    """Return an AI explanation of *code* using the selected *mode*."""
-    return await generate(make_explain_prompt(code, mode), model)
-
-
-async def summarise_project(snapshot: str, model: str = DEFAULT_MODEL) -> str:
-    """Return a high-level project summary from a codebase *snapshot*."""
-    return await generate(make_summary_prompt(snapshot), model)
-
-
-async def detect_confusion(code: str, model: str = DEFAULT_MODEL) -> str:
-    """Identify and explain the most confusing parts of *code*."""
-    return await generate(make_confusion_prompt(code), model)
-
-
-async def answer_with_rag(question: str, context: str, model: str = DEFAULT_MODEL) -> str:
-    """Answer *question* using the RAG-retrieved *context*."""
-    return await generate(make_rag_prompt(question, context), model)
 
 
 # ── Streaming variants (used by the SSE endpoints) ──────────────────────────

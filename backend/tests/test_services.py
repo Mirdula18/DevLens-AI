@@ -83,6 +83,16 @@ def test_parse_project_rejects_non_directory(tmp_path):
         raise AssertionError("expected ValueError for a non-directory path")
 
 
+def test_parse_project_skips_tool_caches(project_dir, tmp_path):
+    for cache in (".pytest_cache", ".ruff_cache", ".mypy_cache"):
+        d = tmp_path / cache
+        d.mkdir()
+        (d / "README.md").write_text("cache\n", encoding="utf-8")
+    result = parse_project(project_dir)
+    assert result["file_count"] == 3
+    assert not any(n["name"].startswith(".") for n in result["tree"])
+
+
 def test_get_flat_files_skips_ignored_dirs(project_dir):
     files = get_flat_files(project_dir)
     assert len(files) == 3

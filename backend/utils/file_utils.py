@@ -29,6 +29,7 @@ IGNORED_DIRS: set[str] = {
     "node_modules", ".git", "__pycache__", ".venv",
     "venv", "env", "dist", "build", ".next", ".nuxt",
     "coverage", ".cache", ".idea", ".vscode",
+    ".pytest_cache", ".ruff_cache", ".mypy_cache", ".tox",
 }
 
 # Max bytes we will read from a single file (100 KB)

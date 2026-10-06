@@ -9,7 +9,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from routes import chat, explain, file, models, summary, tree, upload
+from routes import chat, explain, file, models, stats, summary, tree, upload
 from services import llm_service
 
 
@@ -45,6 +45,7 @@ app.include_router(explain.router, prefix="/explain", tags=["explain"])
 app.include_router(summary.router, prefix="/summary", tags=["summary"])
 app.include_router(chat.router, prefix="/chat", tags=["chat"])
 app.include_router(models.router, prefix="/models", tags=["models"])
+app.include_router(stats.router, prefix="/stats", tags=["stats"])
 
 
 @app.exception_handler(RequestValidationError)

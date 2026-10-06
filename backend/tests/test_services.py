@@ -11,6 +11,7 @@ import json
 from routes.chat import _cap_context
 from services import llm_service, rag_service
 from services.file_parser import get_flat_files, parse_project
+from services.stats_service import compute_stats, language_for
 from utils import file_utils
 
 # ── file_utils ───────────────────────────────────────────────────────────────
@@ -157,6 +158,29 @@ def test_cap_context():
     capped = _cap_context("x" * 50, max_chars=10)
     assert capped.startswith("x" * 10)
     assert capped.endswith("[context truncated]")
+
+
+# ── stats_service ────────────────────────────────────────────────────────────
+
+def test_language_for():
+    assert language_for("a/b/App.TSX") == "TypeScript"
+    assert language_for("x.yml") == language_for("x.yaml") == "YAML"
+    assert language_for(".env.example") == "Config"
+
+
+def test_compute_stats_empty_project(tmp_path):
+    stats = compute_stats(str(tmp_path))
+    assert stats["total_files"] == 0
+    assert stats["languages"] == []
+    assert stats["largest_files"] == []
+
+
+def test_compute_stats_limits_largest_files(tmp_path):
+    for i in range(8):
+        (tmp_path / f"f{i}.py").write_text("x\n" * (i + 1), encoding="utf-8")
+    stats = compute_stats(str(tmp_path))
+    assert [f["lines"] for f in stats["largest_files"]] == [8, 7, 6, 5, 4]
+    assert stats["languages"] == [{"name": "Python", "files": 8, "lines": 36, "percent": 100.0}]
 
 
 # ── llm_service ──────────────────────────────────────────────────────────────

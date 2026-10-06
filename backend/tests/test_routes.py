@@ -227,6 +227,25 @@ def test_chat_validation(client):
     assert resp.status_code == 400
 
 
+# ── /stats ──────────────────────────────────────────────────────────────────
+
+def test_stats(client, project_dir):
+    client.post("/upload", json={"path": project_dir})
+    resp = client.get("/stats")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total_files"] == 3
+    assert data["total_lines"] == 3 + 1 + 2  # app.py, config.json, README.md
+    names = [lang["name"] for lang in data["languages"]]
+    assert names == ["Python", "Markdown", "JSON"]  # ordered by line count
+    assert round(sum(lang["percent"] for lang in data["languages"])) == 100
+    assert data["largest_files"][0] == {"path": "src/app.py", "lines": 3, "language": "Python"}
+
+
+def test_stats_without_project(client):
+    assert client.get("/stats").status_code == 400
+
+
 def test_chat_without_project(client):
     resp = client.post("/chat", json={"question": "hello"})
     assert resp.status_code == 400

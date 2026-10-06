@@ -4,7 +4,7 @@ import react from '@vitejs/plugin-react'
 // Backend URL for the dev/preview proxy (override with DEVLENS_API_URL)
 const target = process.env.DEVLENS_API_URL ?? 'http://localhost:8000'
 
-const apiRoutes = ['/upload', '/tree', '/file', '/explain', '/summary', '/chat', '/models', '/health']
+const apiRoutes = ['/upload', '/tree', '/file', '/explain', '/summary', '/chat', '/models', '/stats', '/health']
 
 export default defineConfig({
   plugins: [react()],

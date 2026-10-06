@@ -156,7 +156,7 @@ def test_chat_streams_with_sources(client, project_dir, monkeypatch):
     from services import rag_service
 
     async def fake_search(root, question, top_k=5):
-        return [rag_service.Chunk("src/app.py", "def hello(): return 'hello'\n")]
+        return [rag_service.Chunk("src/app.py", "def hello(): return 'hello'\n", 1, 3)]
 
     monkeypatch.setattr(rag_service, "search_async", fake_search)
     client.post("/upload", json={"path": project_dir})
@@ -169,8 +169,55 @@ def test_chat_streams_with_sources(client, project_dir, monkeypatch):
         tokens = [e["data"] for e in events if e["type"] == "token"]
         assert "fake reply" in "".join(tokens)
         sources_events = [e for e in events if e["type"] == "sources"]
-        assert sources_events and "src/app.py" in sources_events[0]["data"]
+        assert sources_events[0]["data"] == [
+            {"path": "src/app.py", "start_line": 1, "end_line": 3}
+        ]
         assert events[-1]["type"] == "done"
+
+
+def test_chat_uses_history_for_follow_ups(client, project_dir, monkeypatch):
+    from services import llm_service, rag_service
+
+    seen = {}
+
+    async def fake_search(root, question, top_k=5):
+        seen["query"] = question
+        return [rag_service.Chunk("src/app.py", "def hello(): ...\n", 1, 1)]
+
+    async def fake_stream_rag(question, context, model, history=""):
+        seen["history"] = history
+        yield "ok"
+
+    monkeypatch.setattr(rag_service, "search_async", fake_search)
+    monkeypatch.setattr(llm_service, "stream_rag", fake_stream_rag)
+    client.post("/upload", json={"path": project_dir})
+
+    history = [
+        {"role": "user", "content": "Where is hello defined?"},
+        {"role": "assistant", "content": "In src/app.py."},
+    ]
+    with client.stream(
+        "POST", "/chat", json={"question": "What does it return?", "history": history},
+    ) as resp:
+        assert resp.status_code == 200
+        _events(resp)
+
+    # Retrieval combines the previous question with the follow-up
+    assert seen["query"] == "Where is hello defined?\nWhat does it return?"
+    assert "Developer: Where is hello defined?" in seen["history"]
+    assert "Assistant: In src/app.py." in seen["history"]
+
+
+def test_chat_history_is_trimmed(client):
+    from routes.chat import MAX_HISTORY_TURNS, MAX_TURN_CHARS, ChatRequest
+
+    turns = [{"role": "user", "content": "x" * (MAX_TURN_CHARS + 50)}] * (MAX_HISTORY_TURNS + 4)
+    req = ChatRequest(question="q", history=turns)
+    assert len(req.history) == MAX_HISTORY_TURNS
+    assert all(len(t.content) == MAX_TURN_CHARS for t in req.history)
+
+    resp = client.post("/chat", json={"question": "q", "history": [{"role": "system", "content": "x"}]})
+    assert resp.status_code == 400
 
 
 def test_chat_validation(client):

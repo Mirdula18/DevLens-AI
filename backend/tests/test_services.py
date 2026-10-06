@@ -101,25 +101,55 @@ def test_get_flat_files_skips_ignored_dirs(project_dir):
 
 # ── rag_service ──────────────────────────────────────────────────────────────
 
-def test_chunk_text_overlaps():
-    text = "".join(str(i % 10) for i in range(250))
-    chunks = rag_service._chunk_text(text, size=100, overlap=20)
-    assert [len(c) for c in chunks] == [100, 100, 90, 10]
-    # Each chunk starts with the last `overlap` characters of the previous one
-    assert chunks[1][:20] == chunks[0][-20:]
-    assert "".join(c[20:] if i else c for i, c in enumerate(chunks)) == text
+def test_chunk_lines_tracks_line_ranges_with_overlap():
+    text = "".join(f"line {i:02d}\n" for i in range(1, 21))  # 20 lines x 8 chars
+    chunks = rag_service._chunk_lines(text, size=40, overlap_lines=1)
+    # 5 lines fit per chunk; each chunk repeats the previous chunk's last line
+    assert [(s, e) for s, e, _ in chunks] == [(1, 5), (5, 9), (9, 13), (13, 17), (17, 20)]
+    for start, end, content in chunks:
+        assert content.splitlines() == [f"line {i:02d}" for i in range(start, end + 1)]
+        assert len(content) <= 40
 
 
-def test_chunk_text_empty():
-    assert rag_service._chunk_text("") == []
+def test_chunk_lines_splits_very_long_lines():
+    text = "short\n" + "x" * 250 + "\nend\n"
+    chunks = rag_service._chunk_lines(text, size=100, overlap_lines=0)
+    assert all(len(c) <= 100 for _, _, c in chunks)
+    assert "".join(c for _, _, c in chunks) == text
+    # Pieces of the long line all report line 2
+    assert [(s, e) for s, e, _ in chunks] == [(1, 1), (2, 2), (2, 2), (2, 3)]
+
+
+def test_chunk_lines_always_progresses():
+    # Overlap larger than a chunk must not loop forever
+    chunks = rag_service._chunk_lines("a\nb\nc\n", size=2, overlap_lines=5)
+    assert [(s, e) for s, e, _ in chunks] == [(1, 1), (2, 2), (3, 3)]
+
+
+def test_chunk_lines_empty():
+    assert rag_service._chunk_lines("") == []
 
 
 def test_build_context_formats_chunks():
     chunks = [
-        rag_service.Chunk("a.py", "print('a')"),
-        rag_service.Chunk("b.py", "print('b')"),
+        rag_service.Chunk("a.py", "print('a')", 1, 1),
+        rag_service.Chunk("b.py", "print('b')", 3, 4),
     ]
-    assert rag_service.build_context(chunks) == "### a.py\nprint('a')\n\n### b.py\nprint('b')"
+    assert rag_service.build_context(chunks) == (
+        "### a.py (lines 1-1)\nprint('a')\n\n### b.py (lines 3-4)\nprint('b')"
+    )
+
+
+def test_source_refs_dedupes_in_order():
+    chunks = [
+        rag_service.Chunk("b.py", "x", 10, 20),
+        rag_service.Chunk("a.py", "y", 1, 5),
+        rag_service.Chunk("b.py", "x", 10, 20),
+    ]
+    assert rag_service.source_refs(chunks) == [
+        {"path": "b.py", "start_line": 10, "end_line": 20},
+        {"path": "a.py", "start_line": 1, "end_line": 5},
+    ]
 
 
 def test_cap_context():
@@ -152,3 +182,11 @@ def test_rag_prompt_contains_question_and_context():
     prompt = llm_service.make_rag_prompt("Where is auth?", "### auth.py\ncode")
     assert "Where is auth?" in prompt
     assert "### auth.py" in prompt
+    assert "Conversation so far" not in prompt
+
+
+def test_rag_prompt_includes_history():
+    prompt = llm_service.make_rag_prompt("And tests?", "ctx", "Developer: Where is auth?")
+    assert "Conversation so far" in prompt
+    assert "Developer: Where is auth?" in prompt
+    assert prompt.index("Conversation so far") < prompt.index("Question: And tests?")

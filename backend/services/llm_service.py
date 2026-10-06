@@ -147,12 +147,18 @@ Code:
 _RAG_ANSWER = """\
 You are a senior software engineer helping a developer understand their codebase.
 Use ONLY the context below to answer the question.
+When you refer to code, cite the file and line range shown in its heading (e.g. routes/file.py lines 12-40).
 If the answer is not in the context, say "I could not find relevant information in the provided files."
 
 Context (retrieved code snippets):
 {context}
-
+{history}
 Question: {question}
+"""
+
+_RAG_HISTORY = """
+Conversation so far (use it to understand follow-up questions):
+{history}
 """
 
 MODE_PROMPTS: dict[str, str] = {
@@ -209,8 +215,9 @@ def make_confusion_prompt(code: str) -> str:
     return _CONFUSION_DETECT.format(code=code)
 
 
-def make_rag_prompt(question: str, context: str) -> str:
-    return _RAG_ANSWER.format(context=context, question=question)
+def make_rag_prompt(question: str, context: str, history: str = "") -> str:
+    history_block = _RAG_HISTORY.format(history=history) if history.strip() else ""
+    return _RAG_ANSWER.format(context=context, question=question, history=history_block)
 
 
 # ── Public helpers ────────────────────────────────────────────────────────────
@@ -258,6 +265,6 @@ async def stream_confusion(code: str, model: str = DEFAULT_MODEL):
         yield token
 
 
-async def stream_rag(question: str, context: str, model: str = DEFAULT_MODEL):
-    async for token in stream_generate(make_rag_prompt(question, context), model):
+async def stream_rag(question: str, context: str, model: str = DEFAULT_MODEL, history: str = ""):
+    async for token in stream_generate(make_rag_prompt(question, context, history), model):
         yield token

@@ -6,9 +6,11 @@
  * open, which keeps the bundle far smaller than the full Prism build.
  *
  * Props:
- *   fileName – name of the file (used to pick language)
- *   content  – raw text content
+ *   fileName  – name of the file (used to pick language)
+ *   content   – raw text content
+ *   highlight – optional { start, end } line range to highlight and scroll to
  */
+import { useEffect, useRef } from 'react'
 import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import bash from 'react-syntax-highlighter/dist/esm/languages/prism/bash'
@@ -58,7 +60,22 @@ function getLang(fileName) {
   return EXT_LANG[ext] ?? 'text'
 }
 
-export default function CodeViewer({ fileName, content }) {
+const HIGHLIGHT_STYLE = {
+  display: 'block',
+  background: 'rgba(88, 166, 255, 0.12)',
+  boxShadow: 'inset 2px 0 0 #58a6ff',
+}
+
+export default function CodeViewer({ fileName, content, highlight }) {
+  const scrollRef = useRef(null)
+
+  // Bring the highlighted range into view (e.g. after clicking a citation)
+  useEffect(() => {
+    if (!highlight || !content) return
+    const line = scrollRef.current?.querySelector(`[data-line="${highlight.start}"]`)
+    line?.scrollIntoView({ block: 'center' })
+  }, [highlight, content])
+
   if (!content) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-gray-600">
@@ -76,15 +93,30 @@ export default function CodeViewer({ fileName, content }) {
           <Icon.File className="h-3.5 w-3.5" />
         </span>
         <span className="font-mono text-gray-200">{fileName}</span>
+        {highlight && (
+          <span className="ml-auto rounded bg-accent/15 px-1.5 py-0.5 font-mono text-[11px] text-accent">
+            {highlight.start === highlight.end
+              ? `Line ${highlight.start}`
+              : `Lines ${highlight.start}–${highlight.end}`}
+          </span>
+        )}
       </div>
 
       {/* Code */}
-      <div className="flex-1 overflow-auto">
+      <div ref={scrollRef} className="flex-1 overflow-auto">
         <SyntaxHighlighter
           language={getLang(fileName)}
           style={oneDark}
           showLineNumbers
           wrapLongLines={false}
+          wrapLines
+          lineProps={lineNumber => ({
+            'data-line': lineNumber,
+            style:
+              highlight && lineNumber >= highlight.start && lineNumber <= highlight.end
+                ? HIGHLIGHT_STYLE
+                : { display: 'block' },
+          })}
           customStyle={{
             margin: 0,
             borderRadius: 0,
